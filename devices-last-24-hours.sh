@@ -40,3 +40,13 @@ echo "Filtered outputs written to:"
 for output_file in "${output_files[@]}"; do
   echo "$output_file"
 done
+
+./duckdb devices.duckdb < Duckdb.sql
+# Confirmation messages
+echo "DuckDB updated"
+
+# Confirmation messages with measurements
+./duckdb devices.duckdb "SELECT COUNT(*) AS row_count FROM measurements;"
+
+
+
