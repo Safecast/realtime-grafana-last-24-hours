@@ -7,3 +7,5 @@ The all_devices is filtered on taking only the last 24 hours measurements from T
 Some known bad data is filtered out.
 From the all_devices 4 files are filtered  for different tube types. 
 Also air devices data is is created in a separate file.
+
+Data picking up from TTserve (gateway of Safecast)->filtering out last 24-hour data->storing the data on VPS->processing devices by air and tubes-> Grafana picks up the layers and overlay a map->data stored i DuckDB->display on public dashboard. A python script (as part of the main shell script ) extract files with data grouped by devices as JSON files. Those JSON files can be picked up by another Grafana dashboard (work in progress).
