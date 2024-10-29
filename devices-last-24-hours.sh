@@ -48,5 +48,9 @@ echo "DuckDB updated"
 # Confirmation messages with measurements
 ./duckdb devices.duckdb "SELECT COUNT(*) AS row_count FROM measurements;"
 
+# Step 3: Run the Python script to export device_urn JSON files
+python3 import_duckdb.py  # Update the path to your Python script
 
+# Final confirmation
+echo "Device URN JSON files exported."
 
