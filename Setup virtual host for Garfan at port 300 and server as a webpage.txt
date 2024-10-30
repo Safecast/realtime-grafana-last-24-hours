@@ -1,0 +1,24 @@
+<VirtualHost *:443>
+                ServerName grafana.domain.tld
+                ServerAdmin me@mydomain.tld
+                
+                # Use HTTP Strict Transport Security to force client to use secure connections only.
+                Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+                # Referer logging is used to allow websites and web servers to identify where people are visiting them from, for promotional or statistical purposes.
+                Header always set Referrer-Policy "no-referrer"                 
+                
+                SSLCertificateFile /etc/letsencrypt/live/grafana.domain.tld/fullchain.pem
+                SSLCertificateKeyFile /etc/letsencrypt/live/grafana.domain.tld/privkey.pem
+
+                SSLEngine on
+                SSLProtocol all -TLSv1 -TLSv1.1 -SSLv2 -SSLv3
+                SSLHonorCipherOrder on
+                SSLCompression off
+                SSLOptions +StrictRequire
+                SSLCipherSuite ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256
+
+  
+                ProxyPreserveHost On 
+                ProxyPass / http://127.0.0.1:3000/
+                ProxyPassReverse / http://127.0.0.1:3000/
+        </VirtualHost>

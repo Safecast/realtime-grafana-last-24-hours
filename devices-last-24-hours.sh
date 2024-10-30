@@ -41,10 +41,7 @@ for output_file in "${output_files[@]}"; do
   echo "$output_file"
 done
 
-
-# run  the SQL script to update the measurements table
 ./duckdb devices.duckdb < Duckdb.sql
-
 # Confirmation messages
 echo "DuckDB updated"
 
@@ -52,7 +49,7 @@ echo "DuckDB updated"
 ./duckdb devices.duckdb "SELECT COUNT(*) AS row_count FROM measurements;"
 
 # Step 3: Run the Python script to export device_urn JSON files
-python3 import_duckdb.py  
+python3 import_duckdb.py  # Update the path to your Python script
 
 # Final confirmation
 echo "Device URN JSON files exported."
