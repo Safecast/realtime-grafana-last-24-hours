@@ -1,5 +1,4 @@
--- Load the JSON extension
-INSTALL 'json';
+-- Load the JSON extension (skip INSTALL if using DuckDB >= 0.6.0)
 LOAD 'json';
 
 -- Create the measurements table if it does not already exist
@@ -9,6 +8,7 @@ CREATE TABLE IF NOT EXISTS measurements (
     device BIGINT,
     device_sn VARCHAR,
     device_urn VARCHAR,
+    device_filename VARCHAR,        -- New column added
     env_temp BIGINT,
     lnd_7128ec VARCHAR,
     lnd_7318c VARCHAR,
@@ -22,14 +22,35 @@ CREATE TABLE IF NOT EXISTS measurements (
     PRIMARY KEY (device, when_captured)
 );
 
--- Insert only new measurements from all_devices.json, handling empty strings with try_cast
-INSERT INTO measurements
+-- Create an index to optimize the NOT EXISTS check (optional but recommended)
+CREATE INDEX IF NOT EXISTS idx_measurements_device_when_captured ON measurements (device, when_captured);
+
+-- Insert only new measurements from last-24-hours.json, handling empty strings with try_cast
+INSERT INTO measurements (
+    bat_voltage,
+    dev_temp,
+    device,
+    device_sn,
+    device_urn,
+    device_filename,                -- Include the new field
+    env_temp,
+    lnd_7128ec,
+    lnd_7318c,
+    lnd_7318u,
+    loc_country,
+    loc_lat,
+    loc_lon,
+    loc_name,
+    pms_pm02_5,
+    when_captured
+)
 SELECT 
     bat_voltage,
     try_cast(dev_temp AS BIGINT) AS dev_temp,
     try_cast(device AS BIGINT) AS device,
     device_sn,
     device_urn,
+    device_filename,                 -- Include the new field
     try_cast(env_temp AS BIGINT) AS env_temp,
     lnd_7128ec,
     lnd_7318c,
