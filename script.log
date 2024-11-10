@@ -1,45 +1,38 @@
-[Sun Nov 10 12:17:41 AM JST 2024] Fetching device data...
-[Sun Nov 10 12:17:41 AM JST 2024] --2024-11-10 00:17:41--  https://tt.safecast.org/devices?template=%7B%22when_captured%22:%22%22,%22device_urn%22:%22%22,%22device_sn%22:%22%22,%22device%22:%22%22,%22loc_name%22:%22%22,%22loc_country%22:%22%22,%22loc_lat%22:0.0,%22loc_lon%22:0.0,%22env_temp%22:0.0,%22lnd_7318c%22:%22%22,%22lnd_7318u%22:%22%22,%22lnd_7128ec%22:%22%22,%22pms_pm02_5%22:%22%22,%22bat_voltage%22:%22%22,%22dev_temp%22:0.0%7D
-[Sun Nov 10 12:17:41 AM JST 2024] Resolving tt.safecast.org (tt.safecast.org)... 52.25.102.134, 52.43.160.55
-[Sun Nov 10 12:17:41 AM JST 2024] Connecting to tt.safecast.org (tt.safecast.org)|52.25.102.134|:443... connected.
-[Sun Nov 10 12:17:46 AM JST 2024] HTTP request sent, awaiting response... 200 OK
-[Sun Nov 10 12:17:46 AM JST 2024] Length: unspecified [application/json]
-[Sun Nov 10 12:17:46 AM JST 2024] Saving to: ‘all_devices.json’
-[Sun Nov 10 12:17:46 AM JST 2024] 
-[Sun Nov 10 12:17:46 AM JST 2024]      0K .......... .......... .......... .......... .......... 83.2K
-[Sun Nov 10 12:17:47 AM JST 2024]     50K .......... .......... .......... .......... ..........  109K
-[Sun Nov 10 12:17:47 AM JST 2024]    100K .......... .......... .......... .......... ..........  109K
-[Sun Nov 10 12:17:48 AM JST 2024]    150K .......... .......... .......... .......... ..........  111K
-[Sun Nov 10 12:17:48 AM JST 2024]    200K .......... .......... .......... .......... ..........  156K
-[Sun Nov 10 12:17:48 AM JST 2024]    250K .......... .......... .......... .......... ..........  134K
-[Sun Nov 10 12:17:49 AM JST 2024]    300K .......... .......... .......... .......... ..........  128K
-[Sun Nov 10 12:17:49 AM JST 2024]    350K .......... .......... .......... .......... ........    231K=3.3s
-[Sun Nov 10 12:17:49 AM JST 2024] 
-[Sun Nov 10 12:17:49 AM JST 2024] 2024-11-10 00:17:49 (122 KB/s) - ‘all_devices.json’ saved [408533]
-[Sun Nov 10 12:17:49 AM JST 2024] 
-[Sun Nov 10 12:17:49 AM JST 2024] 'all_devices.json' downloaded successfully.
-[Sun Nov 10 12:17:49 AM JST 2024] Checking if 'device_filename' column exists in 'measurements' table...
-[Sun Nov 10 12:17:49 AM JST 2024] Column existence count: 0
-[Sun Nov 10 12:17:49 AM JST 2024] 'device_filename' column does not exist. Adding the column...
-[Sun Nov 10 12:17:49 AM JST 2024] 'device_filename' column added successfully.
-[Sun Nov 10 12:17:49 AM JST 2024] Running DuckDB SQL script to create table and insert data...
-[Sun Nov 10 12:17:49 AM JST 2024] DuckDB SQL script executed successfully.
-[Sun Nov 10 12:17:49 AM JST 2024] Filtering and transforming devices for 'last-24-hours.json'...
-[Sun Nov 10 12:17:49 AM JST 2024] 'last-24-hours.json' created with 'device_filename' field.
-[Sun Nov 10 12:17:49 AM JST 2024] Filtering and transforming devices for 'last-24-hours-air.json'...
-[Sun Nov 10 12:17:49 AM JST 2024] 'last-24-hours-air.json' created with 'device_filename' field.
-[Sun Nov 10 12:17:49 AM JST 2024] Filtering and transforming devices for 'last-24-hours-radiation-7318u.json'...
-[Sun Nov 10 12:17:49 AM JST 2024] 'last-24-hours-radiation-7318u.json' created with 'device_filename' field.
-[Sun Nov 10 12:17:49 AM JST 2024] Filtering and transforming devices for 'last-24-hours-radiation-7318c.json'...
-[Sun Nov 10 12:17:49 AM JST 2024] 'last-24-hours-radiation-7318c.json' created with 'device_filename' field.
-[Sun Nov 10 12:17:49 AM JST 2024] Filtering and transforming devices for 'last-24-hours-radiation-712ec.json'...
-[Sun Nov 10 12:17:49 AM JST 2024] 'last-24-hours-radiation-712ec.json' created with 'device_filename' field.
-[Sun Nov 10 12:17:49 AM JST 2024] Filtered and transformed outputs written to:
-[Sun Nov 10 12:17:49 AM JST 2024] last-24-hours.json
-[Sun Nov 10 12:17:49 AM JST 2024] last-24-hours-air.json
-[Sun Nov 10 12:17:49 AM JST 2024] last-24-hours-radiation-7318u.json
-[Sun Nov 10 12:17:49 AM JST 2024] last-24-hours-radiation-7318c.json
-[Sun Nov 10 12:17:49 AM JST 2024] last-24-hours-radiation-712ec.json
-[Sun Nov 10 12:17:49 AM JST 2024] Total measurements in DuckDB: 151346
-[Sun Nov 10 12:17:49 AM JST 2024] Running Python script to export device_urn JSON files...
-[Sun Nov 10 12:17:54 AM JST 2024] Device URN JSON files exported successfully.
+[Sun Nov 10 11:50:01 PM JST 2024] Fetching device data...
+[Sun Nov 10 11:50:01 PM JST 2024] --2024-11-10 23:50:01--  https://tt.safecast.org/devices?template=%7B%22when_captured%22:%22%22,%22device_urn%22:%22%22,%22device_sn%22:%22%22,%22device%22:%22%22,%22loc_name%22:%22%22,%22loc_country%22:%22%22,%22loc_lat%22:0.0,%22loc_lon%22:0.0,%22env_temp%22:0.0,%22lnd_7318c%22:%22%22,%22lnd_7318u%22:%22%22,%22lnd_7128ec%22:%22%22,%22pms_pm02_5%22:%22%22,%22bat_voltage%22:%22%22,%22dev_temp%22:0.0%7D
+[Sun Nov 10 11:50:02 PM JST 2024] Resolving tt.safecast.org (tt.safecast.org)... 52.43.160.55, 52.25.102.134
+[Sun Nov 10 11:50:02 PM JST 2024] Connecting to tt.safecast.org (tt.safecast.org)|52.43.160.55|:443... connected.
+[Sun Nov 10 11:50:06 PM JST 2024] HTTP request sent, awaiting response... 200 OK
+[Sun Nov 10 11:50:06 PM JST 2024] Length: unspecified [application/json]
+[Sun Nov 10 11:50:06 PM JST 2024] Saving to: ‘all_devices.json’
+[Sun Nov 10 11:50:06 PM JST 2024] 
+[Sun Nov 10 11:50:06 PM JST 2024]      0K .......... .......... .......... .......... ..........  278K
+[Sun Nov 10 11:50:06 PM JST 2024]     50K .......... .......... .......... .......... ..........  278K
+[Sun Nov 10 11:50:06 PM JST 2024]    100K .......... .......... .......... .......... .......... 4.05M
+[Sun Nov 10 11:50:06 PM JST 2024]    150K .......... .......... .......... .......... ..........  299K
+[Sun Nov 10 11:50:06 PM JST 2024]    200K .......... .......... .......... .......... .......... 5.97M
+[Sun Nov 10 11:50:06 PM JST 2024]    250K .......... .......... .......... .......... .......... 9.71M
+[Sun Nov 10 11:50:06 PM JST 2024]    300K .......... .......... .......... .......... ..........  133M
+[Sun Nov 10 11:50:06 PM JST 2024]    350K .......... .......... .......... .......... ........   16.0M=0.6s
+[Sun Nov 10 11:50:06 PM JST 2024] 
+[Sun Nov 10 11:50:06 PM JST 2024] 2024-11-10 23:50:06 (718 KB/s) - ‘all_devices.json’ saved [408486]
+[Sun Nov 10 11:50:06 PM JST 2024] 
+[Sun Nov 10 11:50:06 PM JST 2024] 'all_devices.json' downloaded successfully.
+[Sun Nov 10 11:50:06 PM JST 2024] Backup of 'all_devices.json' created at 'all_devices.json_backup_20241110235006.json'.
+[Sun Nov 10 11:50:06 PM JST 2024] Processing 'all_devices.json' to replace empty fields with appropriate defaults...
+[Sun Nov 10 11:50:06 PM JST 2024] Processed data saved to 'processed_devices.json'.
+[Sun Nov 10 11:50:06 PM JST 2024] Replaced original 'all_devices.json' with processed data.
+[Sun Nov 10 11:50:06 PM JST 2024] Validating processed data...
+[Sun Nov 10 11:50:06 PM JST 2024] All records contain the 'device' field.
+[Sun Nov 10 11:50:06 PM JST 2024] Validation completed.
+[Sun Nov 10 11:50:06 PM JST 2024] Running DuckDB SQL script to create table and insert data...
+[Sun Nov 10 11:50:06 PM JST 2024] Binder Error: DEFAULT value cannot contain column names
+[Sun Nov 10 11:50:06 PM JST 2024] LINE 2:     id INTEGER DEFAULT (rowid),
+[Sun Nov 10 11:50:06 PM JST 2024]                                 ^
+[Sun Nov 10 11:50:06 PM JST 2024] Catalog Error: Table with name measurements does not exist!
+[Sun Nov 10 11:50:06 PM JST 2024] Did you mean "pg_sequences"?
+[Sun Nov 10 11:50:06 PM JST 2024] Catalog Error: Table with name measurements does not exist!
+[Sun Nov 10 11:50:06 PM JST 2024] Did you mean "pg_sequences"?
+[Sun Nov 10 11:50:06 PM JST 2024] LINE 1: UPDATE measurements
+[Sun Nov 10 11:50:06 PM JST 2024]                ^
+[Sun Nov 10 11:50:06 PM JST 2024] Error: DuckDB SQL script execution failed.
