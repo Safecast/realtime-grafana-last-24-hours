@@ -10,8 +10,8 @@ device_urns = conn.execute("SELECT DISTINCT device_urn FROM measurements").fetch
 
 # Export data for each device_urn to a separate JSON file
 for (device_urn,) in device_urns:
-    temp_filename = f"/home/rob/Downloads/Grafana-dashboards-and-query-script/{device_urn.replace(':', '_')}_temp.json"
-    final_filename = f"/home/rob/Downloads/Grafana-dashboards-and-query-script/JSON/{device_urn.replace(':', '_')}.json"
+    temp_filename = f"/home/rob/Documents/realtime-grafana-last-24-hours/{device_urn.replace(':', '_')}_temp.json"
+    final_filename = f"/home/rob/Downloads/JSON/{device_urn.replace(':', '_')}.json"
     
     # Use COPY to create a temporary JSON file
     query = f"""

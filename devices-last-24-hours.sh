@@ -26,60 +26,38 @@ numeric_fields=("loc_lat" "loc_lon" "env_temp" "dev_temp")
 fetch_data() {
   echo "Fetching device data..."
 
-  # Fetch data using wget and save to all_devices.json
-  wget "https://tt.safecast.org/devices?template={\"when_captured\":\"\",\"device_urn\":\"\",\"device_sn\":\"\",\"device\":\"\",\"loc_name\":\"\",\"loc_country\":\"\",\"loc_lat\":0.0,\"loc_lon\":0.0,\"env_temp\":0.0,\"lnd_7318c\":\"\",\"lnd_7318u\":\"\",\"lnd_7128ec\":\"\",\"pms_pm02_5\":\"\",\"bat_voltage\":\"\",\"dev_temp\":0.0}" \
-      --output-document="$all_devices"
+  wget -qO- "https://tt.safecast.org/devices?template={\"when_captured\":\"\",\"device_urn\":\"\",\"device_sn\":\"\",\"device\":\"\",\"loc_name\":\"\",\"loc_country\":\"\",\"loc_lat\":0.0,\"loc_lon\":0.0,\"env_temp\":0.0,\"lnd_7318c\":\"\",\"lnd_7318u\":0.0,\"lnd_7128ec\":\"\",\"pms_pm02_5\":\"\",\"bat_voltage\":\"\",\"dev_temp\":0.0}" | \
+  jq -c 'unique_by(.device_urn, .when_captured) | .[] | {
+      when_captured: (if (.when_captured | test("^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$")) 
+                      then .when_captured 
+                      else (now | strftime("%Y-%m-%d %H:%M:%S")) end),
+      device_urn: (.device_urn // "0"),
+      device_sn: (.device_sn // "0"),
+      device: (.device // "0"),
+      loc_name: (.loc_name // "0"),
+      loc_country: (.loc_country // "0"),
+      loc_lat: (if (.loc_lat == "" or .loc_lat == null) then 0 else .loc_lat end),
+      loc_lon: (if (.loc_lon == "" or .loc_lon == null) then 0 else .loc_lon end),
+      env_temp: (if (.env_temp == "" or .env_temp == null) then 0 else .env_temp end),
+      lnd_7318c: (.lnd_7318c // "0"),
+      lnd_7318u: (if (.lnd_7318u == "" or .lnd_7318u == null) then 0 else .lnd_7318u end),
+      lnd_7128ec: (.lnd_7128ec // "0"),
+      pms_pm02_5: (.pms_pm02_5 // "0"),
+      bat_voltage: (if (.bat_voltage == "" or .bat_voltage == null) then 0 else .bat_voltage end),
+      dev_temp: (if (.dev_temp == "" or .dev_temp == null) then 0 else .dev_temp end),
+      device_filename: (if .device_urn and .device_urn != "" and .device_urn != "0"
+                        then (.device_urn | gsub("[:\"]"; "_") + ".json")
+                        else "unknown_device.json" end)
+    }' > last-24-hours.json
 
   if [ $? -ne 0 ]; then
-    echo "Error: Failed to fetch device data."
+    echo "Error: Failed to fetch or process device data."
     exit 1
   fi
 
-  echo "'$all_devices' downloaded successfully."
-
-  # Backup the original all_devices.json before processing
-  backup_file="${all_devices}_backup_$(date +%Y%m%d%H%M%S).json"
-  cp "$all_devices" "$backup_file"
-  echo "Backup of '$all_devices' created at '$backup_file'."
-
-  # Process the downloaded JSON to replace empty fields with appropriate defaults using jq
-  echo "Processing '$all_devices' to replace empty fields with appropriate defaults..."
-
-  jq '
-    map(
-      {
-        when_captured: ((.when_captured // "0") | tostring),
-        device_urn: ((.device_urn // "0") | tostring),
-        device_sn: ((.device_sn // "0") | tostring),
-        device: ((.device // "0") | tostring),
-        loc_name: ((.loc_name // "0") | tostring),
-        loc_country: ((.loc_country // "0") | tostring),
-        loc_lat: (if (.loc_lat == "" or .loc_lat == null) then 0 else .loc_lat end),
-        loc_lon: (if (.loc_lon == "" or .loc_lon == null) then 0 else .loc_lon end),
-        env_temp: (if (.env_temp == "" or .env_temp == null) then 0 else .env_temp end),
-        lnd_7318c: ((.lnd_7318c // "0") | tostring),
-        lnd_7318u: ((.lnd_7318u // "0") | tostring),
-        lnd_7128ec: ((.lnd_7128ec // "0") | tostring),
-        pms_pm02_5: ((.pms_pm02_5 // "0") | tostring),
-        bat_voltage: ((.bat_voltage // "0") | tostring),
-        dev_temp: (if (.dev_temp == "" or .dev_temp == null) then 0 else .dev_temp end),
-        device_filename: ((.device_filename // "0.json") | tostring)
-      }
-    )
-  ' "$all_devices" > "$processed_devices"
-
-  if [ $? -ne 0 ]; then
-    echo "Error: Failed to process JSON data with jq."
-    exit 1
-  fi
-
-  echo "Processed data saved to '$processed_devices'."
-
-  # Replace the original all_devices.json with the processed one
-  mv "$processed_devices" "$all_devices"
-
-  echo "Replaced original '$all_devices' with processed data."
+  echo "'last-24-hours.json' downloaded, filtered, and formatted successfully."
 }
+
 
 # Function to check and add device_filename column if it does not exist
 ensure_device_filename_column() {
