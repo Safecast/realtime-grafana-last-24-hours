@@ -6,6 +6,7 @@ Setup incoming on localhost
 cd /home/rob/Documents/simple-gateway
   source .venv/bin/activate
 
+
 Setup incoming data app:
   gunicorn -w 4 -k uvicorn.workers.UvicornWorker grafana_duckdb_api:app --bind 0.0.0.0:8000
 

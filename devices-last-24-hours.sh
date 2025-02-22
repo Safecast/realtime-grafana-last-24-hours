@@ -26,11 +26,15 @@ numeric_fields=("loc_lat" "loc_lon" "env_temp" "dev_temp")
 fetch_data() {
   echo "Fetching device data..."
 
+  # Get the current local timestamp in the required format
+  local local_time=$(date +"%Y-%m-%d %H:%M:%S")
+
+  # Fetch data from the API and process it with jq
   wget -qO- "https://tt.safecast.org/devices?template={\"when_captured\":\"\",\"device_urn\":\"\",\"device_sn\":\"\",\"device\":\"\",\"loc_name\":\"\",\"loc_country\":\"\",\"loc_lat\":0.0,\"loc_lon\":0.0,\"env_temp\":0.0,\"lnd_7318c\":\"\",\"lnd_7318u\":0.0,\"lnd_7128ec\":\"\",\"pms_pm02_5\":\"\",\"bat_voltage\":\"\",\"dev_temp\":0.0}" | \
-  jq -c 'unique_by(.device_urn, .when_captured) | .[] | {
-      when_captured: (if (.when_captured | test("^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$")) 
-                      then .when_captured 
-                      else (now | strftime("%Y-%m-%d %H:%M:%S")) end),
+  jq -c --arg local_time "$local_time" 'unique_by(.device_urn, .when_captured) | .[] | {
+      when_captured: (if (.when_captured == null or .when_captured == "") 
+                      then $local_time
+                      else .when_captured end),
       device_urn: (.device_urn // "0"),
       device_sn: (.device_sn // "0"),
       device: (.device // "0"),
@@ -57,7 +61,6 @@ fetch_data() {
 
   echo "'last-24-hours.json' downloaded, filtered, and formatted successfully."
 }
-
 
 # Function to check and add device_filename column if it does not exist
 ensure_device_filename_column() {
@@ -110,7 +113,52 @@ run_sql_script() {
     exit 1
   fi
 
-  ./duckdb devices.duckdb < Duckdb.sql
+  # Modify the SQL script to use INSERT OR IGNORE with parameterized values
+  sed -i 's/INSERT INTO measurements/INSERT OR IGNORE INTO measurements/' Duckdb.sql
+
+  # Ensure the 'when_captured' column allows NULLs and insert data
+  ./duckdb devices.duckdb <<EOF
+-- Create the table if it doesn't exist, and ensure 'when_captured' allows NULL
+CREATE TABLE IF NOT EXISTS measurements (
+  device_urn VARCHAR PRIMARY KEY,
+  when_captured TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  device_sn VARCHAR,
+  device VARCHAR,
+  loc_name VARCHAR,
+  loc_country VARCHAR,
+  loc_lat FLOAT,
+  loc_lon FLOAT,
+  env_temp FLOAT,
+  lnd_7318c VARCHAR,
+  lnd_7318u FLOAT,
+  lnd_7128ec VARCHAR,
+  pms_pm02_5 VARCHAR,
+  bat_voltage FLOAT,
+  dev_temp FLOAT,
+  device_filename VARCHAR
+);
+
+-- Insert data ignoring duplicates based on device_urn and when_captured
+INSERT OR IGNORE INTO measurements (
+  device_urn,
+  when_captured,
+  device_sn,
+  device,
+  loc_name,
+  loc_country,
+  loc_lat,
+  loc_lon,
+  env_temp,
+  lnd_7318c,
+  lnd_7318u,
+  lnd_7128ec,
+  pms_pm02_5,
+  bat_voltage,
+  dev_temp,
+  device_filename
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+EOF
+
   if [ $? -ne 0 ]; then
     echo "Error: DuckDB SQL script execution failed."
     exit 1

@@ -1,29 +1,14 @@
-[Mon Nov 11 12:08:22 AM JST 2024] Fetching device data...
-[Mon Nov 11 12:08:26 AM JST 2024] 'last-24-hours.json' downloaded, filtered, and formatted successfully.
-[Mon Nov 11 12:08:26 AM JST 2024] Validating processed data...
-[Mon Nov 11 12:08:26 AM JST 2024] All records contain the 'device' field.
-[Mon Nov 11 12:08:27 AM JST 2024] Validation completed.
-[Mon Nov 11 12:08:27 AM JST 2024] Running DuckDB SQL script to create table and insert data...
-[Mon Nov 11 12:08:27 AM JST 2024] DuckDB SQL script executed successfully.
-[Mon Nov 11 12:08:27 AM JST 2024] Checking if 'device_filename' column exists in 'measurements' table...
-[Mon Nov 11 12:08:27 AM JST 2024] Column existence count: 1
-[Mon Nov 11 12:08:27 AM JST 2024] 'device_filename' column already exists in 'measurements' table.
-[Mon Nov 11 12:08:27 AM JST 2024] Filtering and transforming devices for 'last-24-hours.json'...
-[Mon Nov 11 12:08:27 AM JST 2024] 'last-24-hours.json' created with 'device_filename' field.
-[Mon Nov 11 12:08:27 AM JST 2024] Filtering and transforming devices for 'last-24-hours-air.json'...
-[Mon Nov 11 12:08:27 AM JST 2024] 'last-24-hours-air.json' created with 'device_filename' field.
-[Mon Nov 11 12:08:27 AM JST 2024] Filtering and transforming devices for 'last-24-hours-radiation-7318u.json'...
-[Mon Nov 11 12:08:27 AM JST 2024] 'last-24-hours-radiation-7318u.json' created with 'device_filename' field.
-[Mon Nov 11 12:08:27 AM JST 2024] Filtering and transforming devices for 'last-24-hours-radiation-7318c.json'...
-[Mon Nov 11 12:08:27 AM JST 2024] 'last-24-hours-radiation-7318c.json' created with 'device_filename' field.
-[Mon Nov 11 12:08:27 AM JST 2024] Filtering and transforming devices for 'last-24-hours-radiation-712ec.json'...
-[Mon Nov 11 12:08:27 AM JST 2024] 'last-24-hours-radiation-712ec.json' created with 'device_filename' field.
-[Mon Nov 11 12:08:27 AM JST 2024] Filtered and transformed outputs written to:
-[Mon Nov 11 12:08:27 AM JST 2024] last-24-hours.json
-[Mon Nov 11 12:08:27 AM JST 2024] last-24-hours-air.json
-[Mon Nov 11 12:08:27 AM JST 2024] last-24-hours-radiation-7318u.json
-[Mon Nov 11 12:08:27 AM JST 2024] last-24-hours-radiation-7318c.json
-[Mon Nov 11 12:08:27 AM JST 2024] last-24-hours-radiation-712ec.json
-[Mon Nov 11 12:08:27 AM JST 2024] Total measurements in DuckDB: 161473
-[Mon Nov 11 12:08:27 AM JST 2024] Running Python script to export device_urn JSON files...
-[Mon Nov 11 12:08:34 AM JST 2024] Device URN JSON files exported successfully.
+[Thu Feb 20 12:39:33 PM JST 2025] Fetching device data...
+[Thu Feb 20 12:39:37 PM JST 2025] 'last-24-hours.json' downloaded, filtered, and formatted successfully.
+[Thu Feb 20 12:39:37 PM JST 2025] Validating processed data...
+[Thu Feb 20 12:39:37 PM JST 2025] All records contain the 'device' field.
+[Thu Feb 20 12:39:38 PM JST 2025] Warning: Field 'device' has non-string values.
+[Thu Feb 20 12:39:38 PM JST 2025] Warning: Field 'lnd_7318c' has non-string values.
+[Thu Feb 20 12:39:38 PM JST 2025] Warning: Field 'lnd_7318u' has non-string values.
+[Thu Feb 20 12:39:38 PM JST 2025] Warning: Field 'lnd_7128ec' has non-string values.
+[Thu Feb 20 12:39:38 PM JST 2025] Warning: Field 'pms_pm02_5' has non-string values.
+[Thu Feb 20 12:39:38 PM JST 2025] Warning: Field 'bat_voltage' has non-string values.
+[Thu Feb 20 12:39:38 PM JST 2025] Validation completed.
+[Thu Feb 20 12:39:38 PM JST 2025] Running DuckDB SQL script to create table and insert data...
+[Thu Feb 20 12:39:38 PM JST 2025] Binder Error: There are no UNIQUE/PRIMARY KEY Indexes that refer to this table, ON CONFLICT is a no-op
+[Thu Feb 20 12:39:38 PM JST 2025] Error: DuckDB SQL script execution failed.
