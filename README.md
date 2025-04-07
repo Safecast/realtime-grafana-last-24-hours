@@ -65,9 +65,9 @@ To set up the cron job:
    crontab -e
    ```
 
-2. Add the following entry to run the script every 5 minutes:
+2. Add the following entry to run the script every 15 minutes:
    ```bash
-   */5 * * * * /path/to/data_pull_script.sh
+   */15 * * * * /path/to/data_pull_script.sh
    ```
 
 ### Configuration
