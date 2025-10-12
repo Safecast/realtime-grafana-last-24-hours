@@ -2,10 +2,11 @@
 
 # -----------------------------------------------------------------------------
 # Script: devices-last-24-hours.sh
-# Description: Fetches device data from Safecast API for the last 24 hours,
+# Description: Fetches device data from Safecast API,
+#              preserves all historical data (not just last 24 hours),
 #              replaces empty fields with appropriate defaults,
 #              ensures database columns, filters and transforms data,
-#              and exports device URN JSON files.
+#              and exports device URN JSON files with complete history.
 # -----------------------------------------------------------------------------
 
 # Redirect all output and errors to script.log with timestamps
@@ -15,8 +16,8 @@ exec 2>&1
 # Input and output files
 all_devices="all_devices.json"
 processed_devices="processed_devices.json"  # Temporary file for processed data
-output_files=("last-24-hours.json" "last-24-hours-air.json" "last-24-hours-radiation-7318u.json" "last-24-hours-radiation-7318c.json" "last-24-hours-radiation-712ec.json")
-device_keys=("" "pms_pm02_5" "lnd_7318u" "lnd_7318c" "lnd_7128ec")
+output_files=("last-24-hours-air.json" "last-24-hours-radiation-7318u.json" "last-24-hours-radiation-7318c.json" "last-24-hours-radiation-712ec.json")
+device_keys=("pms_pm02_5" "lnd_7318u" "lnd_7318c" "lnd_7128ec")
 
 # Define arrays of string and numeric fields
 string_fields=("when_captured" "device_urn" "device_sn" "device" "loc_name" "loc_country" "lnd_7318c" "lnd_7318u" "lnd_7128ec" "pms_pm02_5" "bat_voltage")
@@ -28,6 +29,7 @@ fetch_data() {
 
   # Get the current local timestamp in the required format
   local local_time=$(date +"%Y-%m-%d %H:%M:%S")
+  local temp_file="temp-new-data.json"
 
   # Fetch data from the API and process it with jq
   wget -qO- "https://tt.safecast.org/devices?template={\"when_captured\":\"\",\"device_urn\":\"\",\"device_sn\":\"\",\"device\":\"\",\"loc_name\":\"\",\"loc_country\":\"\",\"loc_lat\":0.0,\"loc_lon\":0.0,\"env_temp\":0.0,\"lnd_7318c\":\"\",\"lnd_7318u\":0.0,\"lnd_7128ec\":\"\",\"pms_pm02_5\":\"\",\"bat_voltage\":\"\",\"dev_temp\":0.0}" | \
@@ -52,14 +54,34 @@ fetch_data() {
       device_filename: (if .device_urn and .device_urn != "" and .device_urn != "0"
                         then (.device_urn | gsub("[:\"]"; "_") + ".json")
                         else "unknown_device.json" end)
-    }' > last-24-hours.json
+    }' > "$temp_file"
 
   if [ $? -ne 0 ]; then
     echo "Error: Failed to fetch or process device data."
     exit 1
   fi
 
-  echo "'last-24-hours.json' downloaded, filtered, and formatted successfully."
+  # Merge new data with existing data, removing duplicates
+  if [ -f "last-24-hours.json" ] && [ -s "last-24-hours.json" ]; then
+    echo "Merging new data with existing data..."
+    # Convert existing JSONL to JSON array, merge with new data, deduplicate, and convert back to JSONL
+    jq -s -c '.[0] + .[1] | unique_by(.device_urn, .when_captured) | .[]' "last-24-hours.json" "$temp_file" > "last-24-hours-merged.json"
+    if [ $? -eq 0 ] && [ -s "last-24-hours-merged.json" ]; then
+      mv "last-24-hours-merged.json" "last-24-hours.json"
+    else
+      echo "Warning: Merge failed, using new data only..."
+      mv "$temp_file" "last-24-hours.json"
+    fi
+  else
+    echo "No existing data found or file is empty, using new data only..."
+    # New data is already in JSONL format, just move it
+    mv "$temp_file" "last-24-hours.json"
+  fi
+
+  # Clean up temporary file
+  rm -f "$temp_file"
+
+  echo "'last-24-hours.json' updated with new data, preserving historical data."
 }
 
 # Function to check and add device_filename column if it does not exist
@@ -115,7 +137,7 @@ run_sql_script() {
 
   # Set DuckDB binary path - check multiple possible locations
   DUCKDB_BIN=
-  for path in "/root/.local/bin/duckdb" "./duckdb" "/usr/local/bin/duckdb" "~/.local/bin/duckdb"; do
+  for path in "/root/.local/bin/duckdb" "./duckdb" "/usr/local/bin/duckdb" "/home/rob/.local/bin/duckdb"; do
     if [ -x "$path" ]; then
       DUCKDB_BIN="$path"
       break
@@ -137,8 +159,8 @@ run_sql_script() {
     INSTALL 'json';
     LOAD 'json';
 
-    -- Create the table with explicit schema
-    CREATE OR REPLACE TABLE measurements (
+    -- Create the table with explicit schema (only if it doesn't exist)
+    CREATE TABLE IF NOT EXISTS measurements (
         bat_voltage VARCHAR,
         dev_temp BIGINT,
         device BIGINT,
@@ -154,13 +176,13 @@ run_sql_script() {
         loc_lon DOUBLE,
         loc_name VARCHAR,
         pms_pm02_5 VARCHAR,
-        when_captured TIMESTAMP
+        when_captured TIMESTAMP,
+        PRIMARY KEY (device, when_captured)
     );
 
-    -- Use more efficient JSON parsing in 1.4.1+
-    INSERT INTO measurements
-    WITH raw_data AS (
-      SELECT 
+    -- Insert new measurements, preserving all historical data
+    INSERT OR IGNORE INTO measurements
+    SELECT 
         bat_voltage,
         TRY_CAST(dev_temp AS BIGINT) AS dev_temp,
         TRY_CAST(device AS BIGINT) AS device,
@@ -177,12 +199,8 @@ run_sql_script() {
         loc_name,
         pms_pm02_5,
         TRY_CAST(when_captured AS TIMESTAMP) AS when_captured
-      FROM (
-        SELECT * FROM read_json_auto('last-24-hours.json')
-        WHERE TRY_CAST(when_captured AS TIMESTAMP) IS NOT NULL
-      ) filtered
-    )
-    SELECT * FROM raw_data;
+    FROM read_json_auto('last-24-hours.json')
+    WHERE TRY_CAST(when_captured AS TIMESTAMP) IS NOT NULL;
 
     -- Create optimized indexes based on version
     CREATE INDEX IF NOT EXISTS idx_measurements_device_when_captured 
@@ -209,12 +227,11 @@ filter_devices() {
 
   echo "Filtering and transforming devices for '$output_file'..."
 
-  # Base jq filter for selecting devices
+  # Base jq filter for selecting devices (preserving all historical data)
   jq_filter='[
     .[] | select(
       .when_captured != "0" 
       and (.when_captured | test("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$")) 
-      and (now - (try (.when_captured | fromdateiso8601) catch 9999999999) < 86400) 
       and .device_sn != "RR24023"
       and .device_urn != "geigiecast:61099"'
 
@@ -229,13 +246,36 @@ filter_devices() {
   # Apply transformation to add device_filename, ensuring device_urn is a string
   jq_filter="$jq_filter ] | map(.device_filename = (.device_urn | tostring | gsub(\":\"; \"_\") + \".json\"))"
 
-  # Apply the jq filter to the all_devices.json and output to the specified output file
-  if ! jq "$jq_filter" "$all_devices" > "$output_file"; then
+  # Create temporary filtered file
+  local temp_filtered="temp-filtered-$(basename "$output_file")"
+
+  # Apply the jq filter to the last-24-hours.json and output to temporary file
+  if ! jq -s "$jq_filter" "last-24-hours.json" > "$temp_filtered"; then
     echo "Error: jq transformation failed for $output_file."
     exit 1
   fi
 
-  echo "'$output_file' created with 'device_filename' field."
+  # Merge with existing output file if it exists
+  if [ -f "$output_file" ] && [ -s "$output_file" ]; then
+    echo "Merging filtered data with existing '$output_file'..."
+    # Convert existing JSONL to JSON array, merge with filtered data, deduplicate, and convert back to JSONL
+    jq -s -c '.[0] + .[1] | unique_by(.device_urn, .when_captured) | .[]' "$output_file" "$temp_filtered" > "${output_file}.merged"
+    if [ $? -eq 0 ] && [ -s "${output_file}.merged" ]; then
+      mv "${output_file}.merged" "$output_file"
+    else
+      echo "Warning: Merge failed for '$output_file', using new filtered data only..."
+      mv "$temp_filtered" "$output_file"
+    fi
+  else
+    echo "No existing '$output_file' found or file is empty, using new filtered data only..."
+    # Filtered data is already in JSONL format, just move it
+    mv "$temp_filtered" "$output_file"
+  fi
+
+  # Clean up temporary file
+  rm -f "$temp_filtered"
+
+  echo "'$output_file' updated with filtered data, preserving historical data."
 }
 
 # Function to run Python script
