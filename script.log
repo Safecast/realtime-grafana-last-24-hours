@@ -1,14 +1,13 @@
-[Thu Feb 20 12:39:33 PM JST 2025] Fetching device data...
-[Thu Feb 20 12:39:37 PM JST 2025] 'last-24-hours.json' downloaded, filtered, and formatted successfully.
-[Thu Feb 20 12:39:37 PM JST 2025] Validating processed data...
-[Thu Feb 20 12:39:37 PM JST 2025] All records contain the 'device' field.
-[Thu Feb 20 12:39:38 PM JST 2025] Warning: Field 'device' has non-string values.
-[Thu Feb 20 12:39:38 PM JST 2025] Warning: Field 'lnd_7318c' has non-string values.
-[Thu Feb 20 12:39:38 PM JST 2025] Warning: Field 'lnd_7318u' has non-string values.
-[Thu Feb 20 12:39:38 PM JST 2025] Warning: Field 'lnd_7128ec' has non-string values.
-[Thu Feb 20 12:39:38 PM JST 2025] Warning: Field 'pms_pm02_5' has non-string values.
-[Thu Feb 20 12:39:38 PM JST 2025] Warning: Field 'bat_voltage' has non-string values.
-[Thu Feb 20 12:39:38 PM JST 2025] Validation completed.
-[Thu Feb 20 12:39:38 PM JST 2025] Running DuckDB SQL script to create table and insert data...
-[Thu Feb 20 12:39:38 PM JST 2025] Binder Error: There are no UNIQUE/PRIMARY KEY Indexes that refer to this table, ON CONFLICT is a no-op
-[Thu Feb 20 12:39:38 PM JST 2025] Error: DuckDB SQL script execution failed.
+[Sun Oct 12 12:59:04 PM JST 2025] Fetching device data...
+[Sun Oct 12 12:59:08 PM JST 2025] 'last-24-hours.json' downloaded, filtered, and formatted successfully.
+[Sun Oct 12 12:59:08 PM JST 2025] Validating processed data...
+[Sun Oct 12 12:59:08 PM JST 2025] All records contain the 'device' field.
+[Sun Oct 12 12:59:09 PM JST 2025] Warning: Field 'device' has non-string values.
+[Sun Oct 12 12:59:09 PM JST 2025] Warning: Field 'lnd_7318c' has non-string values.
+[Sun Oct 12 12:59:09 PM JST 2025] Warning: Field 'lnd_7318u' has non-string values.
+[Sun Oct 12 12:59:09 PM JST 2025] Warning: Field 'lnd_7128ec' has non-string values.
+[Sun Oct 12 12:59:09 PM JST 2025] Warning: Field 'pms_pm02_5' has non-string values.
+[Sun Oct 12 12:59:09 PM JST 2025] Warning: Field 'bat_voltage' has non-string values.
+[Sun Oct 12 12:59:09 PM JST 2025] Validation completed.
+[Sun Oct 12 12:59:09 PM JST 2025] Running DuckDB SQL script to create table and insert data...
+[Sun Oct 12 12:59:09 PM JST 2025] Error: DuckDB binary not found. Please install DuckDB and ensure it's in PATH or in one of the checked locations.

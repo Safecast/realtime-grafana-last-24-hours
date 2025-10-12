@@ -69,7 +69,7 @@ ensure_device_filename_column() {
   echo "Checking if 'device_filename' column exists in 'measurements' table..."
 
   # Run the query and capture the count
-  column_exists=$(./duckdb "$db" <<EOF
+  column_exists=$($DUCKDB_BIN "$db" <<EOF
 .mode csv
 .headers off
 SELECT COUNT(*) 
@@ -88,7 +88,7 @@ EOF
     echo "'device_filename' column does not exist. Adding the column..."
 
     # SQL command to add the device_filename column
-    ./duckdb "$db" <<EOF
+    $DUCKDB_BIN "$db" <<EOF
 ALTER TABLE measurements ADD COLUMN device_filename VARCHAR;
 EOF
 
@@ -107,62 +107,98 @@ EOF
 run_sql_script() {
   echo "Running DuckDB SQL script to create table and insert data..."
 
-  # Check if Duckdb.sql exists
-  if [ ! -f "Duckdb.sql" ]; then
-    echo "Error: 'Duckdb.sql' not found in the current directory."
+  # Check if last-24-hours.json exists
+  if [ ! -f "last-24-hours.json" ]; then
+    echo "Error: 'last-24-hours.json' not found in the current directory."
     exit 1
   fi
 
-  # Modify the SQL script to use INSERT OR IGNORE with parameterized values
-  sed -i 's/INSERT INTO measurements/INSERT OR IGNORE INTO measurements/' Duckdb.sql
+  # Set DuckDB binary path - check multiple possible locations
+  DUCKDB_BIN=
+  for path in "/root/.local/bin/duckdb" "./duckdb" "/usr/local/bin/duckdb" "~/.local/bin/duckdb"; do
+    if [ -x "$path" ]; then
+      DUCKDB_BIN="$path"
+      break
+    fi
+  done
 
-  # Ensure the 'when_captured' column allows NULLs and insert data
-  ./duckdb devices.duckdb <<EOF
--- Create the table if it doesn't exist, and ensure 'when_captured' allows NULL
-CREATE TABLE IF NOT EXISTS measurements (
-  device_urn VARCHAR PRIMARY KEY,
-  when_captured TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  device_sn VARCHAR,
-  device VARCHAR,
-  loc_name VARCHAR,
-  loc_country VARCHAR,
-  loc_lat FLOAT,
-  loc_lon FLOAT,
-  env_temp FLOAT,
-  lnd_7318c VARCHAR,
-  lnd_7318u FLOAT,
-  lnd_7128ec VARCHAR,
-  pms_pm02_5 VARCHAR,
-  bat_voltage FLOAT,
-  dev_temp FLOAT,
-  device_filename VARCHAR
-);
-
--- Insert data ignoring duplicates based on device_urn and when_captured
-INSERT OR IGNORE INTO measurements (
-  device_urn,
-  when_captured,
-  device_sn,
-  device,
-  loc_name,
-  loc_country,
-  loc_lat,
-  loc_lon,
-  env_temp,
-  lnd_7318c,
-  lnd_7318u,
-  lnd_7128ec,
-  pms_pm02_5,
-  bat_voltage,
-  dev_temp,
-  device_filename
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-EOF
-
-  if [ $? -ne 0 ]; then
-    echo "Error: DuckDB SQL script execution failed."
+  if [ -z "$DUCKDB_BIN" ]; then
+    echo "Error: DuckDB binary not found. Please install DuckDB and ensure it's in PATH or in one of the checked locations."
     exit 1
   fi
+
+  # Get DuckDB version for version-specific optimizations
+  DUCKDB_VERSION=$($DUCKDB_BIN -version 2>&1 | grep -oP 'v\K[0-9]+\.[0-9]+\.[0-9]+' || echo "1.4.1")
+  echo "Using DuckDB version: $DUCKDB_VERSION from: $(which $DUCKDB_BIN 2>/dev/null || echo $DUCKDB_BIN)"
+
+  # Execute the SQL commands with version-specific optimizations
+  if ! $DUCKDB_BIN devices.duckdb "
+    -- Enable JSON extension (DuckDB 1.2.0 compatible)
+    INSTALL 'json';
+    LOAD 'json';
+
+    -- Create the table with explicit schema
+    CREATE OR REPLACE TABLE measurements (
+        bat_voltage VARCHAR,
+        dev_temp BIGINT,
+        device BIGINT,
+        device_sn VARCHAR,
+        device_urn VARCHAR,
+        device_filename VARCHAR,
+        env_temp BIGINT,
+        lnd_7128ec VARCHAR,
+        lnd_7318c VARCHAR,
+        lnd_7318u BIGINT,
+        loc_country VARCHAR,
+        loc_lat DOUBLE,
+        loc_lon DOUBLE,
+        loc_name VARCHAR,
+        pms_pm02_5 VARCHAR,
+        when_captured TIMESTAMP
+    );
+
+    -- Use more efficient JSON parsing in 1.4.1+
+    INSERT INTO measurements
+    WITH raw_data AS (
+      SELECT 
+        bat_voltage,
+        TRY_CAST(dev_temp AS BIGINT) AS dev_temp,
+        TRY_CAST(device AS BIGINT) AS device,
+        device_sn,
+        device_urn,
+        COALESCE(device_filename, 'unknown_device.json') AS device_filename,
+        TRY_CAST(env_temp AS BIGINT) AS env_temp,
+        lnd_7128ec,
+        lnd_7318c,
+        TRY_CAST(lnd_7318u AS BIGINT) AS lnd_7318u,
+        loc_country,
+        TRY_CAST(loc_lat AS DOUBLE) AS loc_lat,
+        TRY_CAST(loc_lon AS DOUBLE) AS loc_lon,
+        loc_name,
+        pms_pm02_5,
+        TRY_CAST(when_captured AS TIMESTAMP) AS when_captured
+      FROM (
+        SELECT * FROM read_json_auto('last-24-hours.json')
+        WHERE TRY_CAST(when_captured AS TIMESTAMP) IS NOT NULL
+      ) filtered
+    )
+    SELECT * FROM raw_data;
+
+    -- Create optimized indexes based on version
+    CREATE INDEX IF NOT EXISTS idx_measurements_device_when_captured 
+    ON measurements(device, when_captured);
+
+    -- Additional indexes for common query patterns in 1.4.1+
+    CREATE INDEX IF NOT EXISTS idx_measurements_device_urn 
+    ON measurements(device_urn);
+
+    -- Analyze the table for better query planning
+    ANALYZE measurements;
+  "; then
+    echo "Error: Failed to execute DuckDB SQL commands."
+    exit 1
+  fi
+  
   echo "DuckDB SQL script executed successfully."
 }
 
@@ -277,7 +313,7 @@ for output_file in "${output_files[@]}"; do
 done
 
 # Step 6: Confirmation messages with measurements
-row_count=$(./duckdb devices.duckdb <<EOF
+row_count=$($DUCKDB_BIN devices.duckdb <<EOF
 .mode csv
 .headers off
 SELECT COUNT(*) AS row_count FROM measurements;

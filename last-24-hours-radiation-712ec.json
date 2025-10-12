@@ -1,1 +1,20 @@
-[]
+[
+  {
+    "bat_voltage": "",
+    "dev_temp": 0,
+    "device": 62400,
+    "device_sn": "",
+    "device_urn": "geigiecast:62400",
+    "env_temp": 0,
+    "lnd_7128ec": "",
+    "lnd_7318c": "",
+    "lnd_7318u": 29,
+    "loc_country": "",
+    "loc_lat": 48.37931,
+    "loc_lon": 35.13617,
+    "loc_name": "",
+    "pms_pm02_5": "",
+    "when_captured": "2044-00-00T09:42:35Z",
+    "device_filename": "geigiecast_62400.json"
+  }
+]
