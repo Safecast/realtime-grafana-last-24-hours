@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS measurements (
 -- Create an index to optimize the NOT EXISTS check (optional but recommended)
 CREATE INDEX IF NOT EXISTS idx_measurements_device_when_captured ON measurements (device, when_captured);
 
--- Insert only new measurements from last-24-hours.json, handling empty strings with try_cast
+-- Insert new measurements from last-24-hours.json, preserving all historical data
+-- This will only insert records that don't already exist (based on device + when_captured)
 INSERT OR IGNORE INTO measurements (
     bat_voltage,
     dev_temp,
@@ -63,9 +64,7 @@ SELECT
     pms_pm02_5,
     try_cast(when_captured AS TIMESTAMP) AS when_captured
 FROM read_json_auto('last-24-hours.json') AS new_data
-WHERE NOT EXISTS (
-    SELECT 1 FROM measurements AS existing_data
-    WHERE existing_data.device = new_data.device
-    AND existing_data.when_captured = new_data.when_captured
-)
-AND try_cast(when_captured AS TIMESTAMP) IS NOT NULL ;  -- Exclude NULL values
+WHERE try_cast(when_captured AS TIMESTAMP) IS NOT NULL;  -- Exclude NULL values
+
+-- Report how many new records were inserted
+SELECT 'New records inserted: ' || changes() AS insertion_summary;
