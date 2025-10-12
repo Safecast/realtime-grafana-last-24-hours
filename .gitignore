@@ -1,0 +1,30 @@
+# Generated data files
+*.json
+
+# Database files
+*.duckdb
+
+# Log files
+*.log
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Temporary files
+temp-*.json
+*-merged.json
+*-temp.json
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
