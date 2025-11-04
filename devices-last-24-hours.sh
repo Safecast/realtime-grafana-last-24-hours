@@ -2,39 +2,55 @@
 
 # -----------------------------------------------------------------------------
 # Script: devices-last-24-hours.sh
-# Description: Fetches device data from Safecast API,
-#              preserves all historical data (not just last 24 hours),
-#              replaces empty fields with appropriate defaults,
-#              ensures database columns, filters and transforms data,
-#              and exports device URN JSON files with complete history.
+# Description: Fetches device data from Safecast TTServer API and stores it
+#              directly in DuckDB without creating intermediate JSON files.
+#              - Pipes data directly from API → jq → DuckDB
+#              - Preserves all historical data (not just last 24 hours)
+#              - Handles duplicate prevention via PRIMARY KEY constraint
+#              - No JSON files are created - data stored ONLY in DuckDB
 # -----------------------------------------------------------------------------
 
 # Redirect all output and errors to script.log with timestamps
 exec > >(while IFS= read -r line; do echo "[$(date)] $line"; done | tee -i script.log)
 exec 2>&1
 
-# Input and output files
-all_devices="all_devices.json"
-processed_devices="processed_devices.json"  # Temporary file for processed data
-output_files=("last-24-hours-air.json" "last-24-hours-radiation-7318u.json" "last-24-hours-radiation-7318c.json" "last-24-hours-radiation-712ec.json")
-device_keys=("pms_pm02_5" "lnd_7318u" "lnd_7318c" "lnd_7128ec")
+# Function to find DuckDB binary
+find_duckdb_binary() {
+  DUCKDB_BIN=
+  for path in "/root/.local/bin/duckdb" "./duckdb" "/usr/local/bin/duckdb" "/home/rob/.local/bin/duckdb"; do
+    if [ -x "$path" ]; then
+      DUCKDB_BIN="$path"
+      break
+    fi
+  done
 
-# Define arrays of string and numeric fields
-string_fields=("when_captured" "device_urn" "device_sn" "device" "loc_name" "loc_country" "lnd_7318c" "lnd_7318u" "lnd_7128ec" "pms_pm02_5" "bat_voltage")
-numeric_fields=("loc_lat" "loc_lon" "env_temp" "dev_temp")
+  if [ -z "$DUCKDB_BIN" ]; then
+    echo "Error: DuckDB binary not found. Please install DuckDB and ensure it's in PATH or in one of the checked locations."
+    exit 1
+  fi
 
-# Function to fetch device data and process it
-fetch_data() {
-  echo "Fetching device data..."
+  echo "Found DuckDB binary at: $DUCKDB_BIN"
+}
+
+# Function to fetch device data and insert directly into DuckDB (no intermediate JSON files)
+fetch_and_insert_direct() {
+  echo "Fetching device data and inserting directly into DuckDB..."
+
+  # Find DuckDB binary
+  find_duckdb_binary
 
   # Get the current local timestamp in the required format
   local local_time=$(date +"%Y-%m-%d %H:%M:%S")
-  local temp_file="temp-new-data.json"
 
-  # Fetch data from the API and process it with jq
+  # Get DuckDB version for logging
+  DUCKDB_VERSION=$($DUCKDB_BIN -version 2>&1 | grep -oP 'v\K[0-9]+\.[0-9]+\.[0-9]+' || echo "1.4.1")
+  echo "Using DuckDB version: $DUCKDB_VERSION"
+
+  # Fetch data from API, process with jq, and pipe directly to DuckDB
+  # No intermediate JSON files are created!
   wget -qO- "https://tt.safecast.org/devices?template={\"when_captured\":\"\",\"device_urn\":\"\",\"device_sn\":\"\",\"device\":\"\",\"loc_name\":\"\",\"loc_country\":\"\",\"loc_lat\":0.0,\"loc_lon\":0.0,\"env_temp\":0.0,\"lnd_7318c\":\"\",\"lnd_7318u\":0.0,\"lnd_7128ec\":\"\",\"pms_pm02_5\":\"\",\"bat_voltage\":\"\",\"dev_temp\":0.0}" | \
   jq -c --arg local_time "$local_time" 'unique_by(.device_urn, .when_captured) | .[] | {
-      when_captured: (if (.when_captured == null or .when_captured == "") 
+      when_captured: (if (.when_captured == null or .when_captured == "")
                       then $local_time
                       else .when_captured end),
       device_urn: (.device_urn // "0"),
@@ -54,108 +70,9 @@ fetch_data() {
       device_filename: (if .device_urn and .device_urn != "" and .device_urn != "0"
                         then (.device_urn | gsub("[:\"]"; "_") + ".json")
                         else "unknown_device.json" end)
-    }' > "$temp_file"
-
-  if [ $? -ne 0 ]; then
-    echo "Error: Failed to fetch or process device data."
-    exit 1
-  fi
-
-  # Merge new data with existing data, removing duplicates
-  if [ -f "last-24-hours.json" ] && [ -s "last-24-hours.json" ]; then
-    echo "Merging new data with existing data..."
-    # Convert existing JSONL to JSON array, merge with new data, deduplicate, and convert back to JSONL
-    jq -s -c '.[0] + .[1] | unique_by(.device_urn, .when_captured) | .[]' "last-24-hours.json" "$temp_file" > "last-24-hours-merged.json"
-    if [ $? -eq 0 ] && [ -s "last-24-hours-merged.json" ]; then
-      mv "last-24-hours-merged.json" "last-24-hours.json"
-    else
-      echo "Warning: Merge failed, using new data only..."
-      mv "$temp_file" "last-24-hours.json"
-    fi
-  else
-    echo "No existing data found or file is empty, using new data only..."
-    # New data is already in JSONL format, just move it
-    mv "$temp_file" "last-24-hours.json"
-  fi
-
-  # Clean up temporary file
-  rm -f "$temp_file"
-
-  echo "'last-24-hours.json' updated with new data, preserving historical data."
-}
-
-# Function to check and add device_filename column if it does not exist
-ensure_device_filename_column() {
-  local db="devices.duckdb"
-
-  echo "Checking if 'device_filename' column exists in 'measurements' table..."
-
-  # Run the query and capture the count
-  column_exists=$($DUCKDB_BIN "$db" <<EOF
-.mode csv
-.headers off
-SELECT COUNT(*) 
-FROM information_schema.columns 
-WHERE LOWER(table_name) = 'measurements' 
-  AND LOWER(column_name) = 'device_filename';
-EOF
-)
-
-  # Trim whitespace and extract the count
-  column_exists=$(echo "$column_exists" | tr -d '[:space:]')
-
-  echo "Column existence count: $column_exists"
-
-  if [ "$column_exists" -eq 0 ]; then
-    echo "'device_filename' column does not exist. Adding the column..."
-
-    # SQL command to add the device_filename column
-    $DUCKDB_BIN "$db" <<EOF
-ALTER TABLE measurements ADD COLUMN device_filename VARCHAR;
-EOF
-
-    if [ $? -ne 0 ]; then
-      echo "Error: Failed to add 'device_filename' column to 'measurements' table."
-      exit 1
-    fi
-
-    echo "'device_filename' column added successfully."
-  else
-    echo "'device_filename' column already exists in 'measurements' table."
-  fi
-}
-
-# Function to run the DuckDB SQL script (creates table if not exists and inserts data)
-run_sql_script() {
-  echo "Running DuckDB SQL script to create table and insert data..."
-
-  # Check if last-24-hours.json exists
-  if [ ! -f "last-24-hours.json" ]; then
-    echo "Error: 'last-24-hours.json' not found in the current directory."
-    exit 1
-  fi
-
-  # Set DuckDB binary path - check multiple possible locations
-  DUCKDB_BIN=
-  for path in "/root/.local/bin/duckdb" "./duckdb" "/usr/local/bin/duckdb" "/home/rob/.local/bin/duckdb"; do
-    if [ -x "$path" ]; then
-      DUCKDB_BIN="$path"
-      break
-    fi
-  done
-
-  if [ -z "$DUCKDB_BIN" ]; then
-    echo "Error: DuckDB binary not found. Please install DuckDB and ensure it's in PATH or in one of the checked locations."
-    exit 1
-  fi
-
-  # Get DuckDB version for version-specific optimizations
-  DUCKDB_VERSION=$($DUCKDB_BIN -version 2>&1 | grep -oP 'v\K[0-9]+\.[0-9]+\.[0-9]+' || echo "1.4.1")
-  echo "Using DuckDB version: $DUCKDB_VERSION from: $(which $DUCKDB_BIN 2>/dev/null || echo $DUCKDB_BIN)"
-
-  # Execute the SQL commands with version-specific optimizations
-  if ! $DUCKDB_BIN devices.duckdb "
-    -- Enable JSON extension (DuckDB 1.2.0 compatible)
+    }' | \
+  $DUCKDB_BIN devices.duckdb "
+    -- Enable JSON extension
     INSTALL 'json';
     LOAD 'json';
 
@@ -180,9 +97,10 @@ run_sql_script() {
         PRIMARY KEY (device, when_captured)
     );
 
-    -- Insert new measurements, preserving all historical data
+    -- Insert new measurements from stdin (piped data), preserving all historical data
+    -- INSERT OR IGNORE prevents duplicates based on PRIMARY KEY
     INSERT OR IGNORE INTO measurements
-    SELECT 
+    SELECT
         bat_voltage,
         TRY_CAST(dev_temp AS BIGINT) AS dev_temp,
         TRY_CAST(device AS BIGINT) AS device,
@@ -199,160 +117,36 @@ run_sql_script() {
         loc_name,
         pms_pm02_5,
         TRY_CAST(when_captured AS TIMESTAMP) AS when_captured
-    FROM read_json_auto('last-24-hours.json')
+    FROM read_json_auto('/dev/stdin')
     WHERE TRY_CAST(when_captured AS TIMESTAMP) IS NOT NULL;
 
-    -- Create optimized indexes based on version
-    CREATE INDEX IF NOT EXISTS idx_measurements_device_when_captured 
+    -- Create optimized indexes
+    CREATE INDEX IF NOT EXISTS idx_measurements_device_when_captured
     ON measurements(device, when_captured);
 
-    -- Additional indexes for common query patterns in 1.4.1+
-    CREATE INDEX IF NOT EXISTS idx_measurements_device_urn 
+    CREATE INDEX IF NOT EXISTS idx_measurements_device_urn
     ON measurements(device_urn);
 
     -- Analyze the table for better query planning
     ANALYZE measurements;
-  "; then
-    echo "Error: Failed to execute DuckDB SQL commands."
-    exit 1
-  fi
-  
-  echo "DuckDB SQL script executed successfully."
-}
+  "
 
-# Function to filter devices based on provided key and transform device_urn to add device_filename
-filter_devices() {
-  local key="$1"
-  local output_file="$2"
-
-  echo "Filtering and transforming devices for '$output_file'..."
-
-  # Base jq filter for selecting devices (preserving all historical data)
-  jq_filter='[
-    .[] | select(
-      .when_captured != "0" 
-      and (.when_captured | test("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$")) 
-      and .device_sn != "RR24023"
-      and .device_urn != "geigiecast:61099"'
-
-  # Add additional key filter if provided
-  if [ -n "$key" ]; then
-    jq_filter="$jq_filter and .$key != \"0\""
-  fi
-
-  # Close the select condition
-  jq_filter="$jq_filter )"
-
-  # Apply transformation to add device_filename, ensuring device_urn is a string
-  jq_filter="$jq_filter ] | map(.device_filename = (.device_urn | tostring | gsub(\":\"; \"_\") + \".json\"))"
-
-  # Create temporary filtered file
-  local temp_filtered="temp-filtered-$(basename "$output_file")"
-
-  # Apply the jq filter to the last-24-hours.json and output to temporary file
-  if ! jq -s "$jq_filter" "last-24-hours.json" > "$temp_filtered"; then
-    echo "Error: jq transformation failed for $output_file."
-    exit 1
-  fi
-
-  # Merge with existing output file if it exists
-  if [ -f "$output_file" ] && [ -s "$output_file" ]; then
-    echo "Merging filtered data with existing '$output_file'..."
-    # Convert existing JSONL to JSON array, merge with filtered data, deduplicate, and convert back to JSONL
-    jq -s -c '.[0] + .[1] | unique_by(.device_urn, .when_captured) | .[]' "$output_file" "$temp_filtered" > "${output_file}.merged"
-    if [ $? -eq 0 ] && [ -s "${output_file}.merged" ]; then
-      mv "${output_file}.merged" "$output_file"
-    else
-      echo "Warning: Merge failed for '$output_file', using new filtered data only..."
-      mv "$temp_filtered" "$output_file"
-    fi
-  else
-    echo "No existing '$output_file' found or file is empty, using new filtered data only..."
-    # Filtered data is already in JSONL format, just move it
-    mv "$temp_filtered" "$output_file"
-  fi
-
-  # Clean up temporary file
-  rm -f "$temp_filtered"
-
-  echo "'$output_file' updated with filtered data, preserving historical data."
-}
-
-# Function to run Python script
-run_python_script() {
-  echo "Running Python script to export device_urn JSON files..."
-
-  # Check if the Python script exists
-  if [ ! -f "import_duckdb.py" ]; then
-    echo "Error: 'import_duckdb.py' not found in the current directory."
-    exit 1
-  fi
-
-  python3 import_duckdb.py
   if [ $? -ne 0 ]; then
-    echo "Error: Python script execution failed."
+    echo "Error: Failed to fetch data or insert into DuckDB."
     exit 1
   fi
-  echo "Device URN JSON files exported successfully."
-}
 
-# Function to validate processed JSON data
-validate_data() {
-  echo "Validating processed data..."
-
-  # Check for any records missing the 'device' field
-  missing_device=$(jq 'map(select(.device == null))' "$all_devices")
-  if [ "$missing_device" != "[]" ]; then
-    echo "Warning: Some records are missing the 'device' field."
-  else
-    echo "All records contain the 'device' field."
-  fi
-
-  # Check for any non-string types in string fields
-  for field in "${string_fields[@]}"; do
-    non_string=$(jq "map(select(.${field} | type != \"string\"))" "$all_devices")
-    if [ "$non_string" != "[]" ]; then
-      echo "Warning: Field '$field' has non-string values."
-    fi
-  done
-
-  # Check for any non-number types in numeric fields
-  for field in "${numeric_fields[@]}"; do
-    non_number=$(jq "map(select(.${field} | type != \"number\"))" "$all_devices")
-    if [ "$non_number" != "[]" ]; then
-      echo "Warning: Field '$field' has non-numeric values."
-    fi
-  done
-
-  echo "Validation completed."
+  echo "Data fetched and inserted directly into DuckDB (no JSON files saved to disk)."
 }
 
 # Main Execution Flow
 
-# Step 1: Fetch device data and process it
-fetch_data
+# Step 1: Fetch device data from TTServer and insert directly into DuckDB
+# NO JSON files are created! Data is stored ONLY in DuckDB.
+fetch_and_insert_direct
 
-# Step 2: Validate processed data
-validate_data
-
-# Step 3: Run DuckDB SQL script to create table if not exists and insert data
-run_sql_script
-
-# Step 4: Ensure device_filename column exists
-ensure_device_filename_column
-
-# Step 5: Filter and transform devices
-for i in "${!output_files[@]}"; do
-  filter_devices "${device_keys[i]}" "${output_files[i]}"
-done
-
-# Confirmation messages for filtered and transformed outputs
-echo "Filtered and transformed outputs written to:"
-for output_file in "${output_files[@]}"; do
-  echo "$output_file"
-done
-
-# Step 6: Confirmation messages with measurements
+# Step 2: Display statistics
+find_duckdb_binary
 row_count=$($DUCKDB_BIN devices.duckdb <<EOF
 .mode csv
 .headers off
@@ -363,7 +157,25 @@ EOF
 # Trim whitespace and extract the count
 row_count=$(echo "$row_count" | tr -d '[:space:]')
 
+echo ""
+echo "============================================"
+echo "Data pipeline completed successfully!"
 echo "Total measurements in DuckDB: $row_count"
+echo "============================================"
+echo ""
+echo "All data is stored in: devices.duckdb"
+echo "No JSON files were created."
+echo ""
 
-# Step 7: Run the Python script to export device_urn JSON files
-run_python_script
+# Optional: Display some statistics
+echo "Recent device activity:"
+$DUCKDB_BIN devices.duckdb "
+  SELECT
+    device_urn,
+    COUNT(*) as measurement_count,
+    MAX(when_captured) as last_seen
+  FROM measurements
+  GROUP BY device_urn
+  ORDER BY last_seen DESC
+  LIMIT 10;
+"
