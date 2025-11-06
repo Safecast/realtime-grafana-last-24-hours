@@ -62,3 +62,4 @@ duckdb "$DB_FILE" "ANALYZE measurements;"
 echo "[Done] 'measurements' table recreated with PRIMARY KEY. Historical data (if any) reloaded."
 
 
+
