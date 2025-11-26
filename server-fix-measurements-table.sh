@@ -66,3 +66,4 @@ echo "[Done] 'measurements' table recreated with PRIMARY KEY. Historical data (i
 
 
 
+

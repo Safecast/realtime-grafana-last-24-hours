@@ -122,6 +122,27 @@ CREATE TABLE measurements (
     pms_pm02_5 VARCHAR,
     when_captured TIMESTAMP
 );
+
+-- Create performance indexes for time-series queries
+-- Index 1: when_captured (most common - time-range queries like "last 24 hours")
+CREATE INDEX IF NOT EXISTS idx_when_captured
+ON measurements(when_captured);
+
+-- Index 2: device_urn (device-specific queries)
+CREATE INDEX IF NOT EXISTS idx_device_urn
+ON measurements(device_urn);
+
+-- Index 3: loc_country (geographic queries)
+CREATE INDEX IF NOT EXISTS idx_loc_country
+ON measurements(loc_country);
+
+-- Index 4: Composite index for device + time queries (common in Grafana)
+CREATE INDEX IF NOT EXISTS idx_device_time
+ON measurements(device_urn, when_captured);
+
+-- Index 5: Composite index for country + time queries
+CREATE INDEX IF NOT EXISTS idx_country_time
+ON measurements(loc_country, when_captured);
 EOF
 
 echo "✅ DuckLake catalog created: $DUCKLAKE_CATALOG"

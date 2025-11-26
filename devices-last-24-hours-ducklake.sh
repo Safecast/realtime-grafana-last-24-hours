@@ -139,6 +139,25 @@ fetch_and_insert_ducklake() {
         ON n.device = m.device
         AND n.when_captured = m.when_captured
     WHERE m.device IS NULL;
+
+    -- Ensure performance indexes exist for time-series queries
+    CREATE INDEX IF NOT EXISTS idx_when_captured
+    ON measurements(when_captured);
+
+    CREATE INDEX IF NOT EXISTS idx_device_urn
+    ON measurements(device_urn);
+
+    CREATE INDEX IF NOT EXISTS idx_loc_country
+    ON measurements(loc_country);
+
+    CREATE INDEX IF NOT EXISTS idx_device_time
+    ON measurements(device_urn, when_captured);
+
+    CREATE INDEX IF NOT EXISTS idx_country_time
+    ON measurements(loc_country, when_captured);
+
+    -- Update statistics for query optimization
+    ANALYZE measurements;
 EOF
 
   if [ $? -ne 0 ]; then

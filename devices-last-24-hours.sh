@@ -162,12 +162,26 @@ fetch_and_insert_direct() {
       FROM read_json_auto('$TEMP_DATA')
       WHERE TRY_CAST(when_captured AS TIMESTAMP) IS NOT NULL;
 
-      -- Create optimized indexes
-      CREATE INDEX IF NOT EXISTS idx_measurements_device_when_captured
-      ON measurements(device, when_captured);
+      -- Create performance indexes for time-series queries
+      -- Index 1: when_captured (most common - time-range queries like "last 24 hours")
+      CREATE INDEX IF NOT EXISTS idx_when_captured
+      ON measurements(when_captured);
 
-      CREATE INDEX IF NOT EXISTS idx_measurements_device_urn
+      -- Index 2: device_urn (device-specific queries)
+      CREATE INDEX IF NOT EXISTS idx_device_urn
       ON measurements(device_urn);
+
+      -- Index 3: loc_country (geographic queries)
+      CREATE INDEX IF NOT EXISTS idx_loc_country
+      ON measurements(loc_country);
+
+      -- Index 4: Composite index for device + time queries (common in Grafana)
+      CREATE INDEX IF NOT EXISTS idx_device_time
+      ON measurements(device_urn, when_captured);
+
+      -- Index 5: Composite index for country + time queries
+      CREATE INDEX IF NOT EXISTS idx_country_time
+      ON measurements(loc_country, when_captured);
 
       -- Analyze the table for better query planning
       ANALYZE measurements;
@@ -200,6 +214,49 @@ fetch_and_insert_direct() {
 # Step 1: Fetch device data from TTServer and insert directly into DuckDB
 # NO JSON files are created! Data is stored ONLY in DuckDB.
 fetch_and_insert_direct
+
+# Step 1.5: Update summary tables for fast Grafana queries
+echo "Updating summary tables for fast Grafana queries..."
+find_duckdb_binary
+DB_PATH="/var/lib/grafana/data/devices.duckdb"
+
+$DUCKDB_BIN "$DB_PATH" <<EOF
+-- Refresh hourly_summary table
+DELETE FROM hourly_summary WHERE hour < NOW() - INTERVAL '30 days';
+
+INSERT INTO hourly_summary
+SELECT
+    DATE_TRUNC('hour', when_captured) as hour,
+    device_urn,
+    device_sn,
+    loc_country,
+    loc_name,
+    loc_lat,
+    loc_lon,
+    COUNT(*) as reading_count,
+    AVG(TRY_CAST(lnd_7318u AS DOUBLE)) as avg_radiation,
+    MAX(TRY_CAST(lnd_7318u AS DOUBLE)) as max_radiation,
+    MIN(TRY_CAST(lnd_7318u AS DOUBLE)) as min_radiation,
+    AVG(TRY_CAST(env_temp AS DOUBLE)) as avg_temp,
+    MAX(TRY_CAST(env_temp AS DOUBLE)) as max_temp,
+    MIN(TRY_CAST(env_temp AS DOUBLE)) as min_temp
+FROM measurements
+WHERE when_captured >= (SELECT COALESCE(MAX(hour), NOW() - INTERVAL '30 days') FROM hourly_summary)
+GROUP BY hour, device_urn, device_sn, loc_country, loc_name, loc_lat, loc_lon
+ON CONFLICT DO NOTHING;
+
+-- Refresh recent_data table
+DELETE FROM recent_data;
+INSERT INTO recent_data
+SELECT * FROM measurements
+WHERE when_captured >= NOW() - INTERVAL '7 days';
+
+-- Update statistics
+ANALYZE hourly_summary;
+ANALYZE recent_data;
+EOF
+
+echo "Summary tables updated successfully!"
 
 # Step 2: Display statistics
 find_duckdb_binary
