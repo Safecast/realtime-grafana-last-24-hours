@@ -92,6 +92,43 @@ EOF
 
 echo "✅ recent_data table created with indexes"
 
+# Create daily summary table (long-term data)
+echo "📊 Creating daily_summary table..."
+$DUCKDB_BIN "$DB_FILE" <<EOF
+-- Drop existing table if it exists
+DROP TABLE IF EXISTS daily_summary;
+
+-- Create daily summary table
+CREATE TABLE daily_summary AS
+SELECT
+    DATE_TRUNC('day', when_captured) as day,
+    device_urn,
+    device_sn,
+    loc_country,
+    loc_name,
+    loc_lat,
+    loc_lon,
+    COUNT(*) as reading_count,
+    AVG(TRY_CAST(lnd_7318u AS DOUBLE)) as avg_radiation,
+    MAX(TRY_CAST(lnd_7318u AS DOUBLE)) as max_radiation,
+    MIN(TRY_CAST(lnd_7318u AS DOUBLE)) as min_radiation,
+    AVG(TRY_CAST(env_temp AS DOUBLE)) as avg_temp,
+    MAX(TRY_CAST(env_temp AS DOUBLE)) as max_temp,
+    MIN(TRY_CAST(env_temp AS DOUBLE)) as min_temp
+FROM measurements
+GROUP BY day, device_urn, device_sn, loc_country, loc_name, loc_lat, loc_lon;
+
+-- Create indexes for fast queries
+CREATE INDEX idx_daily_day ON daily_summary(day);
+CREATE INDEX idx_daily_device ON daily_summary(device_urn);
+CREATE INDEX idx_daily_country ON daily_summary(loc_country);
+
+-- Analyze for statistics
+ANALYZE daily_summary;
+EOF
+
+echo "✅ daily_summary table created with indexes"
+
 # Show statistics
 echo ""
 echo "📊 Table Statistics:"
@@ -115,7 +152,14 @@ SELECT
     COUNT(*) as row_count,
     MIN(when_captured) as earliest,
     MAX(when_captured) as latest
-FROM recent_data;
+FROM recent_data
+UNION ALL
+SELECT
+    'daily_summary' as table_name,
+    COUNT(*) as row_count,
+    MIN(day) as earliest,
+    MAX(day) as latest
+FROM daily_summary;
 EOF
 
 echo ""
@@ -126,6 +170,7 @@ echo ""
 echo "Tables created:"
 echo "  1. hourly_summary   - Hourly aggregations (last 30 days)"
 echo "  2. recent_data      - Raw data (last 7 days)"
+echo "  3. daily_summary    - Daily aggregations (all history)"
 echo ""
 echo "These tables will be automatically maintained by the data collection script."
 echo ""

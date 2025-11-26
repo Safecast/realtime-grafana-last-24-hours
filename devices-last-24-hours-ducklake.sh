@@ -139,25 +139,6 @@ fetch_and_insert_ducklake() {
         ON n.device = m.device
         AND n.when_captured = m.when_captured
     WHERE m.device IS NULL;
-
-    -- Ensure performance indexes exist for time-series queries
-    CREATE INDEX IF NOT EXISTS idx_when_captured
-    ON measurements(when_captured);
-
-    CREATE INDEX IF NOT EXISTS idx_device_urn
-    ON measurements(device_urn);
-
-    CREATE INDEX IF NOT EXISTS idx_loc_country
-    ON measurements(loc_country);
-
-    CREATE INDEX IF NOT EXISTS idx_device_time
-    ON measurements(device_urn, when_captured);
-
-    CREATE INDEX IF NOT EXISTS idx_country_time
-    ON measurements(loc_country, when_captured);
-
-    -- Update statistics for query optimization
-    ANALYZE measurements;
 EOF
 
   if [ $? -ne 0 ]; then
@@ -170,6 +151,107 @@ EOF
   rm -f "$TEMP_DATA"
 
   echo "Data inserted into DuckLake successfully! (No locking - concurrent access enabled)"
+
+  # -----------------------------------------------------------------------------
+  # Update Summary Tables (Optimized for Grafana)
+  # -----------------------------------------------------------------------------
+  echo "Updating summary tables in DuckLake..."
+
+  $DUCKDB_BIN <<EOF
+    INSTALL ducklake;
+    LOAD ducklake;
+    ATTACH 'ducklake:${DUCKLAKE_CATALOG}' AS safecast (DATA_PATH '${DUCKLAKE_DATA}');
+    USE safecast;
+
+    -- 1. Hourly Summary (Last 30 days)
+    CREATE TABLE IF NOT EXISTS hourly_summary (
+        hour TIMESTAMP,
+        device_urn VARCHAR,
+        device_sn VARCHAR,
+        loc_country VARCHAR,
+        loc_name VARCHAR,
+        loc_lat DOUBLE,
+        loc_lon DOUBLE,
+        reading_count BIGINT,
+        avg_radiation DOUBLE,
+        max_radiation DOUBLE,
+        min_radiation DOUBLE,
+        avg_temp DOUBLE,
+        max_temp DOUBLE,
+        min_temp DOUBLE
+    );
+
+    -- Refresh hourly_summary (incremental)
+    DELETE FROM hourly_summary WHERE hour < NOW() - INTERVAL '30 days';
+
+    INSERT INTO hourly_summary
+    SELECT
+        DATE_TRUNC('hour', when_captured) as hour,
+        device_urn,
+        device_sn,
+        loc_country,
+        loc_name,
+        loc_lat,
+        loc_lon,
+        COUNT(*) as reading_count,
+        AVG(TRY_CAST(lnd_7318u AS DOUBLE)) as avg_radiation,
+        MAX(TRY_CAST(lnd_7318u AS DOUBLE)) as max_radiation,
+        MIN(TRY_CAST(lnd_7318u AS DOUBLE)) as min_radiation,
+        AVG(TRY_CAST(env_temp AS DOUBLE)) as avg_temp,
+        MAX(TRY_CAST(env_temp AS DOUBLE)) as max_temp,
+        MIN(TRY_CAST(env_temp AS DOUBLE)) as min_temp
+    FROM measurements
+    WHERE when_captured >= (SELECT COALESCE(MAX(hour), NOW() - INTERVAL '30 days') FROM hourly_summary)
+    GROUP BY hour, device_urn, device_sn, loc_country, loc_name, loc_lat, loc_lon;
+
+    -- 2. Recent Data (Last 7 days raw)
+    CREATE TABLE IF NOT EXISTS recent_data AS SELECT * FROM measurements WHERE 1=0;
+    
+    DELETE FROM recent_data;
+    INSERT INTO recent_data
+    SELECT * FROM measurements
+    WHERE when_captured >= NOW() - INTERVAL '7 days';
+
+    -- 3. Daily Summary (All history - for 1 year view)
+    CREATE TABLE IF NOT EXISTS daily_summary (
+        day TIMESTAMP,
+        device_urn VARCHAR,
+        device_sn VARCHAR,
+        loc_country VARCHAR,
+        loc_name VARCHAR,
+        loc_lat DOUBLE,
+        loc_lon DOUBLE,
+        reading_count BIGINT,
+        avg_radiation DOUBLE,
+        max_radiation DOUBLE,
+        min_radiation DOUBLE,
+        avg_temp DOUBLE,
+        max_temp DOUBLE,
+        min_temp DOUBLE
+    );
+
+    INSERT INTO daily_summary
+    SELECT
+        DATE_TRUNC('day', when_captured) as day,
+        device_urn,
+        device_sn,
+        loc_country,
+        loc_name,
+        loc_lat,
+        loc_lon,
+        COUNT(*) as reading_count,
+        AVG(TRY_CAST(lnd_7318u AS DOUBLE)) as avg_radiation,
+        MAX(TRY_CAST(lnd_7318u AS DOUBLE)) as max_radiation,
+        MIN(TRY_CAST(lnd_7318u AS DOUBLE)) as min_radiation,
+        AVG(TRY_CAST(env_temp AS DOUBLE)) as avg_temp,
+        MAX(TRY_CAST(env_temp AS DOUBLE)) as max_temp,
+        MIN(TRY_CAST(env_temp AS DOUBLE)) as min_temp
+    FROM measurements
+    WHERE when_captured >= (SELECT COALESCE(MAX(day), '2000-01-01'::TIMESTAMP) FROM daily_summary)
+    GROUP BY day, device_urn, device_sn, loc_country, loc_name, loc_lat, loc_lon;
+EOF
+
+  echo "Summary tables updated successfully!"
 }
 
 # Main Execution Flow
