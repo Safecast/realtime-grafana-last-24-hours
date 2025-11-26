@@ -202,9 +202,8 @@ find_duckdb_binary
 DB_PATH="/var/lib/grafana/data/devices.duckdb"
 
 $DUCKDB_BIN "$DB_PATH" <<EOF
--- Refresh hourly_summary table
-DELETE FROM hourly_summary WHERE hour < NOW() - INTERVAL 30 DAY;
-
+-- Refresh hourly_summary table (recreate last 30 days)
+DELETE FROM hourly_summary;
 INSERT INTO hourly_summary
 SELECT
     DATE_TRUNC('hour', when_captured) as hour,
@@ -222,16 +221,8 @@ SELECT
     MAX(TRY_CAST(env_temp AS DOUBLE)) as max_temp,
     MIN(TRY_CAST(env_temp AS DOUBLE)) as min_temp
 FROM measurements
-WHERE when_captured >= (SELECT COALESCE(MAX(hour), NOW() - INTERVAL 30 DAY) FROM hourly_summary)
-GROUP BY hour, device_urn, device_sn, loc_country, loc_name, loc_lat, loc_lon
-ON CONFLICT (hour, device_urn) DO UPDATE SET
-    reading_count = EXCLUDED.reading_count,
-    avg_radiation = EXCLUDED.avg_radiation,
-    max_radiation = EXCLUDED.max_radiation,
-    min_radiation = EXCLUDED.min_radiation,
-    avg_temp = EXCLUDED.avg_temp,
-    max_temp = EXCLUDED.max_temp,
-    min_temp = EXCLUDED.min_temp;
+WHERE when_captured >= NOW() - INTERVAL 30 DAY
+GROUP BY hour, device_urn, device_sn, loc_country, loc_name, loc_lat, loc_lon;
 
 -- Refresh recent_data table
 DELETE FROM recent_data;
@@ -243,25 +234,9 @@ WHERE when_captured >= NOW() - INTERVAL 7 DAY;
 ANALYZE hourly_summary;
 ANALYZE recent_data;
 
--- Refresh daily_summary table (incremental update)
-CREATE TABLE IF NOT EXISTS daily_summary (
-    day TIMESTAMP,
-    device_urn VARCHAR,
-    device_sn VARCHAR,
-    loc_country VARCHAR,
-    loc_name VARCHAR,
-    loc_lat DOUBLE,
-    loc_lon DOUBLE,
-    reading_count BIGINT,
-    avg_radiation DOUBLE,
-    max_radiation DOUBLE,
-    min_radiation DOUBLE,
-    avg_temp DOUBLE,
-    max_temp DOUBLE,
-    min_temp DOUBLE,
-    PRIMARY KEY (day, device_urn)
-);
-
+-- Refresh daily_summary table (recreate all history)
+-- Note: daily_summary should already exist from setup-summary-tables.sh
+DELETE FROM daily_summary;
 INSERT INTO daily_summary
 SELECT
     DATE_TRUNC('day', when_captured) as day,
@@ -279,9 +254,7 @@ SELECT
     MAX(TRY_CAST(env_temp AS DOUBLE)) as max_temp,
     MIN(TRY_CAST(env_temp AS DOUBLE)) as min_temp
 FROM measurements
-WHERE when_captured >= (SELECT COALESCE(MAX(day), '2000-01-01'::TIMESTAMP) FROM daily_summary)
-GROUP BY day, device_urn, device_sn, loc_country, loc_name, loc_lat, loc_lon
-ON CONFLICT DO NOTHING;
+GROUP BY day, device_urn, device_sn, loc_country, loc_name, loc_lat, loc_lon;
 
 -- Update statistics
 ANALYZE daily_summary;
