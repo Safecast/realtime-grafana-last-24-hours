@@ -182,7 +182,8 @@ EOF
     );
 
     -- Refresh hourly_summary (incremental)
-    DELETE FROM hourly_summary WHERE hour < NOW() - INTERVAL '30 days';
+    -- DuckLake doesn't support ON CONFLICT, so we delete potentially overlapping data first
+    DELETE FROM hourly_summary WHERE hour >= (SELECT COALESCE(MAX(hour), NOW() - INTERVAL 30 DAY) FROM hourly_summary);
 
     INSERT INTO hourly_summary
     SELECT
@@ -201,7 +202,7 @@ EOF
         MAX(TRY_CAST(env_temp AS DOUBLE)) as max_temp,
         MIN(TRY_CAST(env_temp AS DOUBLE)) as min_temp
     FROM measurements
-    WHERE when_captured >= (SELECT COALESCE(MAX(hour), NOW() - INTERVAL '30 days') FROM hourly_summary)
+    WHERE when_captured >= (SELECT COALESCE(MAX(hour), NOW() - INTERVAL 30 DAY) FROM hourly_summary)
     GROUP BY hour, device_urn, device_sn, loc_country, loc_name, loc_lat, loc_lon;
 
     -- 2. Recent Data (Last 7 days raw)
@@ -210,7 +211,7 @@ EOF
     DELETE FROM recent_data;
     INSERT INTO recent_data
     SELECT * FROM measurements
-    WHERE when_captured >= NOW() - INTERVAL '7 days';
+    WHERE when_captured >= NOW() - INTERVAL 7 DAY;
 
     -- 3. Daily Summary (All history - for 1 year view)
     CREATE TABLE IF NOT EXISTS daily_summary (
@@ -315,6 +316,12 @@ EOF
 # Close redirected file descriptors and wait for background processes
 exec 1>&- 2>&-
 wait
+
+# Reload Grafana datasource to pick up new data
+echo "Reloading Grafana datasource..."
+curl -s -X POST "http://localhost:3000/api/admin/provisioning/datasources/reload" \
+  -H "Content-Type: application/json" \
+  -u "admin:admin" > /dev/null 2>&1 || echo "Note: Grafana reload skipped (may require API key)"
 
 # Ensure proper exit
 exit 0

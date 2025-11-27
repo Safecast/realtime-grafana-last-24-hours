@@ -14,7 +14,7 @@ echo "=========================================="
 echo ""
 
 # Configuration - LOCAL PATHS
-OLD_DB="/var/lib/grafana/data/devices.duckdb"
+OLD_DB="/var/lib/grafana/data/devices.duckdb.backup_20251127_193259"
 DUCKLAKE_CATALOG="/var/lib/grafana/data/ducklake_catalog.db"
 DUCKLAKE_DATA="/var/lib/grafana/data/ducklake_data/"
 EXPORT_FILE="/var/lib/grafana/data/measurements_export.parquet"
@@ -34,14 +34,14 @@ echo "📍 Environment: LOCAL ($(hostname))"
 echo ""
 
 # Step 1: Backup existing database
-echo "📦 Step 1: Creating backup..."
-if [ -f "$OLD_DB" ]; then
-    sudo cp "$OLD_DB" "${OLD_DB}.backup_$(date +%Y%m%d_%H%M%S)"
-    echo "✅ Backup created: ${OLD_DB}.backup_$(date +%Y%m%d_%H%M%S)"
-else
-    echo "⚠️  Warning: Old database not found at $OLD_DB"
-    echo "   Will create new DuckLake from scratch"
-fi
+echo "📦 Step 1: Using existing backup as source..."
+# if [ -f "$OLD_DB" ]; then
+#     sudo cp "$OLD_DB" "${OLD_DB}.backup_$(date +%Y%m%d_%H%M%S)"
+#     echo "✅ Backup created: ${OLD_DB}.backup_$(date +%Y%m%d_%H%M%S)"
+# else
+#     echo "⚠️  Warning: Old database not found at $OLD_DB"
+#     echo "   Will create new DuckLake from scratch"
+# fi
 echo ""
 
 # Step 2: Export existing data
@@ -72,7 +72,7 @@ echo "🦆 Step 3: Creating DuckLake catalog and structure..."
 # Create data directory with proper ownership from the start
 sudo mkdir -p "$DUCKLAKE_DATA"
 sudo chown -R $USER:grafana "$DUCKLAKE_DATA"
-sudo chmod 775 "$DUCKLAKE_DATA"
+sudo chmod 2775 "$DUCKLAKE_DATA"
 
 # Remove old catalog if exists (fresh start)
 sudo rm -f "${DUCKLAKE_CATALOG}"*
