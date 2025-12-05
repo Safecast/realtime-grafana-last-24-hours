@@ -51,7 +51,7 @@ cd "$(dirname "$0")"
 echo "Fetching data from TTServer and writing to $TARGET_DB..."
 
 # Get current timestamp for records missing when_captured
-local_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+local_time=$(date +'%Y-%m-%d %H:%M:%S')
 
 # Fetch JSON data from TTServer (no API key needed for /devices endpoint)
 TEMP_JSON=$(mktemp)
@@ -134,11 +134,11 @@ FROM read_json_auto('$TEMP_JSON', maximum_object_size=50000000)
 WHERE TRY_CAST(when_captured AS TIMESTAMP) IS NOT NULL;
 
 -- Delete old data (keep last 30 days)
-DELETE FROM measurements
-WHERE when_captured < NOW() - INTERVAL 30 DAY;
+-- DELETE FROM measurements
+-- WHERE when_captured < NOW() - INTERVAL 30 DAY;
 
 -- Insert new measurements
-INSERT INTO measurements
+INSERT OR IGNORE INTO measurements
 SELECT * FROM new_measurements
 WHERE when_captured >= NOW() - INTERVAL 30 DAY;
 
