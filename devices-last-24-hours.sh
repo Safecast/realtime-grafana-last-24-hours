@@ -3,11 +3,11 @@
 # -----------------------------------------------------------------------------
 # Script: devices-last-24-hours.sh
 # Description: Fetches device data from Safecast TTServer API and stores it
-#              directly in DuckDB without creating intermediate JSON files.
-#              - Pipes data directly from API → jq → DuckDB
+#              into Postgres using `psql` (no DuckDB). Behavior preserved:
+#              - Pipes data from API → jq → staging CSV → Postgres
 #              - Preserves all historical data (not just last 24 hours)
-#              - Handles duplicate prevention via PRIMARY KEY constraint
-#              - No JSON files are created - data stored ONLY in DuckDB
+#              - Prevents duplicates using the existing PRIMARY KEY in Postgres
+#              - No permanent intermediate JSON files are created (uses /dev/shm)
 # -----------------------------------------------------------------------------
 
 # Redirect all output and errors to script.log with timestamps
@@ -15,63 +15,47 @@ exec > >(while IFS= read -r line; do echo "[$(date)] $line"; done | tee -i scrip
 exec 2>&1
 
 # Function to find DuckDB binary
-find_duckdb_binary() {
-  DUCKDB_BIN=
+find_psql_binary() {
+  PSQL_BIN=
 
-  # First, check if duckdb is in PATH
-  if command -v duckdb &> /dev/null; then
-    DUCKDB_BIN=$(command -v duckdb)
-    echo "Found DuckDB binary at: $DUCKDB_BIN"
+  if command -v psql &> /dev/null; then
+    PSQL_BIN=$(command -v psql)
+    echo "Found psql binary at: $PSQL_BIN"
     return 0
   fi
 
-  # If not in PATH, check common installation locations
-  for path in "$HOME/.local/bin/duckdb" "/usr/local/bin/duckdb" "/root/.local/bin/duckdb" "./duckdb"; do
+  for path in "$HOME/.local/bin/psql" "/usr/local/bin/psql" "/usr/bin/psql"; do
     if [ -x "$path" ]; then
-      DUCKDB_BIN="$path"
-      echo "Found DuckDB binary at: $DUCKDB_BIN"
+      PSQL_BIN="$path"
+      echo "Found psql binary at: $PSQL_BIN"
       return 0
     fi
   done
 
-  # Not found anywhere
-  echo "Error: DuckDB binary not found. Please install DuckDB and ensure it's in PATH or in one of the checked locations."
-  echo "Checked locations:"
-  echo "  - System PATH"
-  echo "  - $HOME/.local/bin/duckdb"
-  echo "  - /usr/local/bin/duckdb"
-  echo "  - /root/.local/bin/duckdb"
-  echo "  - ./duckdb"
+  echo "Error: psql binary not found. Please install PostgreSQL client and ensure 'psql' is in PATH."
   exit 1
 }
 
 # Function to fetch device data and insert directly into DuckDB (no intermediate JSON files)
 fetch_and_insert_direct() {
-  echo "Fetching device data and inserting directly into DuckDB..."
+  echo "Fetching device data and inserting into Postgres (via psql)..."
 
-  # Find DuckDB binary
-  find_duckdb_binary
+  # Find psql binary
+  find_psql_binary
 
-  # Database path - accessible by both rob and grafana
-  DB_PATH="/var/lib/grafana/data/devices.duckdb"
+  # Use environment variables for connection: PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
+  # Optionally a full connection string can be passed in PG_CONN (psql understands it).
 
   # Get the current local timestamp in the required format
   local local_time=$(date +"%Y-%m-%d %H:%M:%S")
 
-  # Get DuckDB version for logging
-  DUCKDB_VERSION=$($DUCKDB_BIN -version 2>&1 | grep -oP 'v\K[0-9]+\.[0-9]+\.[0-9]+' || echo "1.4.1")
-  echo "Using DuckDB version: $DUCKDB_VERSION"
+  # Use temp file in /dev/shm (RAM disk) for minimal disk I/O; CSV for fast bulk load
+  TEMP_DATA="/dev/shm/psql_temp_$$.csv"
 
-  # Fetch data from API and process with jq
-  # Use temp file in /dev/shm (RAM disk) for minimal disk I/O
-  TEMP_DATA="/dev/shm/duckdb_temp_$$.json"
-
-  echo "Fetching and processing data..."
-  wget -qO- "https://tt.safecast.org/devices?template={\"when_captured\":\"\",\"device_urn\":\"\",\"device_sn\":\"\",\"device\":\"\",\"loc_name\":\"\",\"loc_country\":\"\",\"loc_lat\":0.0,\"loc_lon\":0.0,\"env_temp\":0.0,\"lnd_7318c\":\"\",\"lnd_7318u\":0.0,\"lnd_7128ec\":\"\",\"pms_pm02_5\":\"\",\"bat_voltage\":\"\",\"dev_temp\":0.0}" | \
-  jq -c --arg local_time "$local_time" 'unique_by(.device_urn, .when_captured) | .[] | {
-      when_captured: (if (.when_captured == null or .when_captured == "")
-                      then $local_time
-                      else .when_captured end),
+    echo "Fetching and processing data to CSV..."
+    wget -qO- "https://tt.safecast.org/devices?template={\"when_captured\":\"\",\"device_urn\":\"\",\"device_sn\":\"\",\"device\":\"\",\"loc_name\":\"\",\"loc_country\":\"\",\"loc_lat\":0.0,\"loc_lon\":0.0,\"env_temp\":0.0,\"lnd_7318c\":\"\",\"lnd_7318u\":0.0,\"lnd_7128ec\":\"\",\"pms_pm02_5\":\"\",\"bat_voltage\":\"\",\"dev_temp\":0.0}" | \
+    jq -r --arg local_time "$local_time" 'unique_by(.device_urn, .when_captured) | .[] | {
+      when_captured: (if (.when_captured == null or .when_captured == "" or (.when_captured | test("^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T.*Z$") | not)) then $local_time else .when_captured end),
       device_urn: (.device_urn // "0"),
       device_sn: (.device_sn // "0"),
       device: (.device // "0"),
@@ -86,10 +70,8 @@ fetch_and_insert_direct() {
       pms_pm02_5: (.pms_pm02_5 // "0"),
       bat_voltage: (if (.bat_voltage == "" or .bat_voltage == null) then 0 else .bat_voltage end),
       dev_temp: (if (.dev_temp == "" or .dev_temp == null) then 0 else .dev_temp end),
-      device_filename: (if .device_urn and .device_urn != "" and .device_urn != "0"
-                        then (.device_urn | gsub("[:\"]"; "_") + ".json")
-                        else "unknown_device.json" end)
-    }' > "$TEMP_DATA"
+      device_filename: (if .device_urn and .device_urn != "" and .device_urn != "0" then (.device_urn | gsub("[:\"]"; "_") + ".json") else "unknown_device.json" end)
+    } | [ .when_captured, .device_urn, .device_sn, .device, .loc_name, .loc_country, (.loc_lat|tostring), (.loc_lon|tostring), (.env_temp|tostring), .lnd_7318c, (.lnd_7318u|tostring), .lnd_7128ec, .pms_pm02_5, .bat_voltage, (.dev_temp|tostring), .device_filename ] | @csv' > "$TEMP_DATA"
 
   if [ $? -ne 0 ] || [ ! -s "$TEMP_DATA" ]; then
     echo "Error: Failed to fetch or process data."
@@ -97,102 +79,67 @@ fetch_and_insert_direct() {
     exit 1
   fi
 
-  echo "Inserting data into DuckDB (quick write transaction)..."
-  # Quick database transaction - minimizes lock time
-  # Retry logic: if database is locked, wait and retry up to 10 times
-  MAX_RETRIES=10
-  RETRY_DELAY=3
-  ATTEMPT=1
+  echo "Loading CSV into Postgres (staging then insert with dedupe check)..."
 
-  while [ $ATTEMPT -le $MAX_RETRIES ]; do
-    if [ $ATTEMPT -gt 1 ]; then
-      echo "Retry attempt $ATTEMPT of $MAX_RETRIES (waiting ${RETRY_DELAY}s for database lock to release)..."
-      sleep $RETRY_DELAY
-    fi
+  # Single attempt to load staging CSV and insert into measurements.
+  $PSQL_BIN "${PG_CONN:-}" -v ON_ERROR_STOP=1 <<SQL
+    CREATE TEMP TABLE IF NOT EXISTS measurements_staging (
+      when_captured TEXT,
+      device_urn TEXT,
+      device_sn TEXT,
+      device TEXT,
+      loc_name TEXT,
+      loc_country TEXT,
+      loc_lat TEXT,
+      loc_lon TEXT,
+      env_temp TEXT,
+      lnd_7318c TEXT,
+      lnd_7318u TEXT,
+      lnd_7128ec TEXT,
+      pms_pm02_5 TEXT,
+      bat_voltage TEXT,
+      dev_temp TEXT,
+      device_filename TEXT
+    );
 
-    $DUCKDB_BIN "$DB_PATH" "
-      -- Enable WAL mode for concurrent access (allows Grafana to read while we write)
-      PRAGMA wal_autocheckpoint='1GB';
+    \copy measurements_staging (when_captured, device_urn, device_sn, device, loc_name, loc_country, loc_lat, loc_lon, env_temp, lnd_7318c, lnd_7318u, lnd_7128ec, pms_pm02_5, bat_voltage, dev_temp, device_filename) FROM '$TEMP_DATA' WITH CSV;
 
-      -- Enable JSON extension
-      INSTALL 'json';
-      LOAD 'json';
+    INSERT INTO measurements (when_captured, device_urn, device_sn, device, loc_name, loc_country, loc_lat, loc_lon, env_temp, lnd_7318c, lnd_7318u, lnd_7128ec, pms_pm02_5, bat_voltage, dev_temp, device_filename)
+    SELECT
+      NULLIF(s.when_captured,'')::timestamp,
+      s.device_urn,
+      s.device_sn,
+      CASE WHEN s.device ~ '^\\d+$' THEN s.device::bigint ELSE NULL END,
+      s.loc_name,
+      s.loc_country,
+      CASE WHEN s.loc_lat ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN s.loc_lat::double precision ELSE NULL END,
+      CASE WHEN s.loc_lon ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN s.loc_lon::double precision ELSE NULL END,
+      CASE WHEN s.env_temp ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN s.env_temp::double precision ELSE NULL END,
+      s.lnd_7318c,
+      CASE WHEN s.lnd_7318u ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN s.lnd_7318u::double precision ELSE NULL END,
+      s.lnd_7128ec,
+      s.pms_pm02_5,
+      s.bat_voltage,
+      CASE WHEN s.dev_temp ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN s.dev_temp::double precision ELSE NULL END,
+      s.device_filename
+    FROM measurements_staging s
+    WHERE NOT EXISTS (
+      SELECT 1 FROM measurements m
+      WHERE m.device_urn IS NOT DISTINCT FROM s.device_urn
+        AND m.when_captured IS NOT DISTINCT FROM (NULLIF(s.when_captured,'')::timestamp)
+    );
+SQL
 
-      -- Create the table with explicit schema (only if it doesn't exist)
-      CREATE TABLE IF NOT EXISTS measurements (
-          bat_voltage VARCHAR,
-          dev_temp BIGINT,
-          device BIGINT,
-          device_sn VARCHAR,
-          device_urn VARCHAR,
-          device_filename VARCHAR,
-          env_temp BIGINT,
-          lnd_7128ec VARCHAR,
-          lnd_7318c VARCHAR,
-          lnd_7318u BIGINT,
-          loc_country VARCHAR,
-          loc_lat DOUBLE,
-          loc_lon DOUBLE,
-          loc_name VARCHAR,
-          pms_pm02_5 VARCHAR,
-          when_captured TIMESTAMP,
-          PRIMARY KEY (device, when_captured)
-      );
+  DB_EXIT_CODE=$?
+  if [ $DB_EXIT_CODE -ne 0 ]; then
+    echo "Error: Failed to insert data into Postgres (exit code: $DB_EXIT_CODE)."
+    rm -f "$TEMP_DATA"
+    exit 1
+  fi
 
-      -- Insert new measurements from stdin (piped data), preserving all historical data
-      -- INSERT OR IGNORE prevents duplicates based on PRIMARY KEY
-      INSERT OR IGNORE INTO measurements
-      SELECT
-          bat_voltage,
-          TRY_CAST(dev_temp AS BIGINT) AS dev_temp,
-          TRY_CAST(device AS BIGINT) AS device,
-          device_sn,
-          device_urn,
-          COALESCE(device_filename, 'unknown_device.json') AS device_filename,
-          TRY_CAST(env_temp AS BIGINT) AS env_temp,
-          lnd_7128ec,
-          lnd_7318c,
-          TRY_CAST(lnd_7318u AS BIGINT) AS lnd_7318u,
-          loc_country,
-          TRY_CAST(loc_lat AS DOUBLE) AS loc_lat,
-          TRY_CAST(loc_lon AS DOUBLE) AS loc_lon,
-          loc_name,
-          pms_pm02_5,
-          TRY_CAST(when_captured AS TIMESTAMP) AS when_captured
-      FROM read_json_auto('$TEMP_DATA')
-      WHERE TRY_CAST(when_captured AS TIMESTAMP) IS NOT NULL;
-
-      -- Create optimized indexes
-      CREATE INDEX IF NOT EXISTS idx_measurements_device_when_captured
-      ON measurements(device, when_captured);
-
-      CREATE INDEX IF NOT EXISTS idx_measurements_device_urn
-      ON measurements(device_urn);
-
-      -- Analyze the table for better query planning
-      ANALYZE measurements;
-    " 2>&1
-
-    DB_EXIT_CODE=$?
-
-    if [ $DB_EXIT_CODE -eq 0 ]; then
-      echo "Database insert successful on attempt $ATTEMPT"
-      break
-    else
-      echo "Database insert failed on attempt $ATTEMPT (exit code: $DB_EXIT_CODE)"
-      if [ $ATTEMPT -eq $MAX_RETRIES ]; then
-        echo "Error: Failed to insert data into DuckDB after $MAX_RETRIES attempts."
-        rm -f "$TEMP_DATA"
-        exit 1
-      fi
-      ATTEMPT=$((ATTEMPT + 1))
-    fi
-  done
-
-  # Clean up temp file
   rm -f "$TEMP_DATA"
 
-  echo "Data fetched and inserted into DuckDB successfully (temp file in RAM, then quick insert)."
+  echo "Data fetched and inserted into Postgres successfully (temp CSV in RAM, then staged insert)."
 }
 
 # Main Execution Flow
@@ -201,41 +148,27 @@ fetch_and_insert_direct() {
 # NO JSON files are created! Data is stored ONLY in DuckDB.
 fetch_and_insert_direct
 
-# Step 2: Display statistics
-find_duckdb_binary
-DB_PATH="/var/lib/grafana/data/devices.duckdb"
-row_count=$($DUCKDB_BIN "$DB_PATH" <<EOF
-.mode csv
-.headers off
-SELECT COUNT(*) AS row_count FROM measurements;
-EOF
-)
-
-# Trim whitespace and extract the count
-row_count=$(echo "$row_count" | tr -d '[:space:]')
+# Step 2: Display statistics (Postgres)
+find_psql_binary
+row_count=$($PSQL_BIN "${PG_CONN:-}" -Atc "SELECT COUNT(*) FROM measurements;")
 
 echo ""
 echo "============================================"
 echo "Data pipeline completed successfully!"
-echo "Total measurements in DuckDB: $row_count"
+echo "Total measurements in Postgres: ${row_count:-0}"
 echo "============================================"
-echo ""
-echo "All data is stored in: $DB_PATH"
-echo "No JSON files were created."
 echo ""
 
 # Optional: Display some statistics
 echo "Recent device activity:"
-$DUCKDB_BIN "$DB_PATH" "
-  SELECT
-    device_urn,
-    COUNT(*) as measurement_count,
-    MAX(when_captured) as last_seen
-  FROM measurements
-  GROUP BY device_urn
-  ORDER BY last_seen DESC
-  LIMIT 10;
-"
+$PSQL_BIN "${PG_CONN:-}" -c "SELECT
+  device_urn,
+  COUNT(*) as measurement_count,
+  MAX(when_captured) as last_seen
+FROM measurements
+GROUP BY device_urn
+ORDER BY last_seen DESC
+LIMIT 10;"
 
 # Close redirected file descriptors and wait for background processes
 exec 1>&- 2>&-

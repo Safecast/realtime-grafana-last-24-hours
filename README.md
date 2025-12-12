@@ -1,3 +1,23 @@
+# realtime-grafana-last-24-hours
+
+## Quick start
+### Notes
+**Safecast Devices (PostgreSQL)**
+- **Script:** `devices-last-24-hours.sh` (root of repo)
+- **DB connection:** set environment variables `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` (or set `PG_CONN` with a libpq connection string).
+- **Example (local test):**
+```
+export PGHOST=localhost
+export PGPORT=5432
+export PGDATABASE=safecast
+export PGUSER=safecast
+export PGPASSWORD='change_me_in_production'
+bash devices-last-24-hours.sh
+```
+- **Behavior:** Uses `/dev/shm` for a temporary CSV, stages into a temp table, then inserts new rows into `measurements`. Deduplication is performed using `(device_urn, when_captured)`. The script does not alter the DB schema.
+- **Logging:** All stdout/stderr is redirected to `script.log` with timestamps.
+- **Service:** Recommended to run via a systemd `oneshot` service + `timer` (see developer notes in repository). Ensure the DB role has `INSERT` privileges on `measurements`.
+
 # Real-time Grafana Setup for the Last 24 Hours
 
 ## Table of Contents
